@@ -1,0 +1,22 @@
+# Example config for shed-remote-agent.
+# Copy this to ~/.config/shed-remote-agent/config.yaml and edit.
+
+defaults:
+  # SSH user + absolute path on shed *hosts* where projects live. The backend
+  # runs `ls` under this user to populate the local-dir picker.
+  local_dir:
+    user: charliek
+    path: /home/charliek/projects
+
+github:
+  # Owners for the repo picker. Resolved via `gh repo list <owner>` on the
+  # machine the backend runs on, so that machine needs `gh auth login`.
+  owners:
+    - charliek
+
+# Optional per-host overrides keyed by the shed-host name from ~/.shed/config.yaml
+# hosts:
+#   macbook:
+#     local_dir:
+#       user: charliek
+#       path: /Users/charliek/projects

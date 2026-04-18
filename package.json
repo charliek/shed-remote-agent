@@ -1,0 +1,27 @@
+{
+  "name": "shed-remote-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile-first web UI for browsing sheds and bootstrapping claude remote-control sessions inside them",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:api": "bun run --filter api dev",
+    "dev:web": "bun run --filter web dev",
+    "build": "bun run --filter '*' build",
+    "test": "bun run --filter '*' test",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.12"
+  }
+}

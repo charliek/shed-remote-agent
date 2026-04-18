@@ -1,0 +1,22 @@
+{
+  "name": "@shed-remote-agent/shared",
+  "version": "0.1.0",
+  "description": "Shared Zod schemas and inferred types for shed-remote-agent",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "echo 'No build needed for shared package'",
+    "test": "echo 'No tests in shared package'",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

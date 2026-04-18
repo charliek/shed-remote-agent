@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  BUN_VERSION: '1.3.5'
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+
+      - name: Biome
+        run: bunx biome ci .
+
+      - name: Type check (api)
+        working-directory: apps/api
+        run: bunx tsc --noEmit
+
+      - name: Type check (web)
+        working-directory: apps/web
+        run: bunx tsc --noEmit
+
+      - name: Type check (shared)
+        working-directory: packages/shared
+        run: bunx tsc --noEmit
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+
+      - name: Run api tests
+        working-directory: apps/api
+        run: bun test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+
+      - name: Build all workspaces
+        run: bun run build
+
+  ci-success:
+    name: CI Success
+    if: always()
+    needs: [lint, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "One or more CI jobs failed"
+            exit 1
+          fi
+          echo "All CI jobs passed"

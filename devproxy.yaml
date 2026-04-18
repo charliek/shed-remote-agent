@@ -1,0 +1,17 @@
+# devproxy configuration for shed-remote-agent
+# Documentation: https://github.com/charliek/devproxy
+
+domain: local.stridelabs.ai
+
+services:
+  sra: 5173       # Frontend (Vite) → https://sra.local.stridelabs.ai
+  sraapi: 8787    # Backend (Hono) → https://sraapi.local.stridelabs.ai
+
+proxy:
+  https_port: 443
+  web_ui_port: 9876
+  web_ui_host: 127.0.0.1
+
+certs:
+  cert_dir: ~/.devproxy/certs
+  auto_generate: true
