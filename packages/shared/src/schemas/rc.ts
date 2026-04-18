@@ -26,7 +26,7 @@ export type RcSession = z.infer<typeof rcSessionSchema>;
 export const createRcRequestSchema = z.object({
   slug: z
     .string()
-    .regex(/^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]?$/)
+    .regex(/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/)
     .optional(),
   display_name: z.string().min(1).max(100).optional(),
   workdir: z.string().optional(),

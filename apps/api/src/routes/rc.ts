@@ -1,5 +1,6 @@
 import { createRcRequestSchema, type RcSession } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
+import { AppError } from '../lib/errors.js';
 import { clientForName } from '../lib/hostClients.js';
 import {
   bootstrap,
@@ -22,7 +23,17 @@ rc.get('/:host/:name/rc', async (c) => {
 rc.post('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
   const { host: h } = await clientForName(host);
-  const body = createRcRequestSchema.parse(await c.req.json().catch(() => ({})));
+
+  const raw = await c.req.text();
+  let parsed: unknown = {};
+  if (raw.trim().length > 0) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw AppError.badRequest('Invalid JSON body');
+    }
+  }
+  const body = createRcRequestSchema.parse(parsed);
 
   const { slug, tmuxSession, displayName, workdir } = await bootstrap({
     host: h,

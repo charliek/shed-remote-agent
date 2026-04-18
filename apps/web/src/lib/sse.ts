@@ -14,11 +14,25 @@ export async function* streamCreateShed(
   url: string,
   body: unknown,
 ): AsyncGenerator<ShedCreateEvent> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(body),
+    });
+  } catch (fetchErr) {
+    yield {
+      type: 'error',
+      data: {
+        error: {
+          code: 'NETWORK_ERROR',
+          message: fetchErr instanceof Error ? fetchErr.message : 'network request failed',
+        },
+      },
+    };
+    return;
+  }
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '');
@@ -40,12 +54,21 @@ export async function* streamCreateShed(
 }
 
 function dispatch(event: string, data: string): ShedCreateEvent | null {
+  if (event !== 'progress' && event !== 'complete' && event !== 'error') return null;
+
   try {
     if (event === 'progress') return { type: 'progress', data: JSON.parse(data) };
     if (event === 'complete') return { type: 'complete', data: JSON.parse(data) };
-    if (event === 'error') return { type: 'error', data: JSON.parse(data) };
+    return { type: 'error', data: JSON.parse(data) };
   } catch {
-    // fall through
+    return {
+      type: 'error',
+      data: {
+        error: {
+          code: 'UPSTREAM_PARSE_ERROR',
+          message: `malformed SSE payload for event "${event}"`,
+        },
+      },
+    };
   }
-  return null;
 }

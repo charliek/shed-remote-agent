@@ -20,6 +20,7 @@ export type SSHErrorClass =
 
 export function classifySSHError(stderr: string, code: number): SSHErrorClass {
   if (code === 0) return 'ok';
+  if (code === 124) return 'timeout';
   const s = stderr.toLowerCase();
   if (s.includes('permission denied') || s.includes('publickey')) return 'auth-denied';
   if (s.includes('no route to host') || s.includes('could not resolve hostname')) {
@@ -75,7 +76,9 @@ export async function run(
   }
 
   const timeout = opts.timeoutMs ?? 15_000;
+  let timedOut = false;
   const killer = setTimeout(() => {
+    timedOut = true;
     try {
       proc.kill();
     } catch {}
@@ -88,5 +91,12 @@ export async function run(
   ]);
   clearTimeout(killer);
 
+  if (timedOut) {
+    return {
+      code: 124,
+      stdout,
+      stderr: `${stderr}\noperation timed out after ${timeout}ms`.trim(),
+    };
+  }
   return { code: code ?? 1, stdout, stderr };
 }

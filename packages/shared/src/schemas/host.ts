@@ -3,8 +3,8 @@ import { z } from 'zod';
 export const hostSchema = z.object({
   name: z.string(),
   host: z.string(),
-  httpPort: z.number().int().positive(),
-  sshPort: z.number().int().positive(),
+  httpPort: z.number().int().positive().max(65535),
+  sshPort: z.number().int().positive().max(65535),
 });
 
 export const hostsResponseSchema = z.object({

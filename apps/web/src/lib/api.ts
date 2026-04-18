@@ -27,21 +27,37 @@ export class APIError extends Error {
 
 async function fetchAPI<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-  });
+
+  const headers = new Headers(options.headers);
+  if (options.body != null && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(url, { ...options, headers });
 
   if (response.status === 204) return undefined as T;
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const contentType = response.headers.get('content-type') ?? '';
+  let data: unknown = null;
+  if (text && contentType.includes('application/json')) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
 
   if (!response.ok) {
-    const err = data?.error || {};
+    const err =
+      (
+        data as {
+          error?: { code?: string; message?: string; details?: Record<string, string[]> };
+        } | null
+      )?.error ?? {};
     throw new APIError(
       err.code || 'UNKNOWN_ERROR',
-      err.message || 'An error occurred',
+      err.message || text || 'An error occurred',
       response.status,
       err.details,
     );

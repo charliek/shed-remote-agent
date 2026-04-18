@@ -75,19 +75,20 @@ export default function NewShedPage() {
         } else if (ev.type === 'complete') {
           setCompleted(true);
           qc.invalidateQueries({ queryKey: ['sheds'] });
+          const shedName = ev.data.name;
           if (startRc) {
             try {
-              await api.createRcSession(effectiveHost, ev.data.name, {});
+              await api.createRcSession(effectiveHost, shedName, {});
             } catch (rcErr) {
-              // Shed is up; rc bootstrap failed. Surface but still navigate to detail.
+              // Shed is up; rc bootstrap failed. Keep the user on this page so
+              // they see the error, and leave a link to the detail page.
               setError(
-                `shed created, but rc bootstrap failed: ${rcErr instanceof Error ? rcErr.message : String(rcErr)}`,
+                `Shed created, but remote-control bootstrap failed: ${rcErr instanceof Error ? rcErr.message : String(rcErr)}. Open the shed to retry.`,
               );
+              return;
             }
           }
-          navigate(
-            `/sheds/${encodeURIComponent(effectiveHost)}/${encodeURIComponent(ev.data.name)}`,
-          );
+          navigate(`/sheds/${encodeURIComponent(effectiveHost)}/${encodeURIComponent(shedName)}`);
           return;
         } else {
           setError(`${ev.data.error.code}: ${ev.data.error.message}`);

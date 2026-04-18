@@ -125,14 +125,21 @@ export class ShedClient {
 }
 
 function dispatch(event: string, data: string): ShedCreateEvent | null {
+  if (event !== 'progress' && event !== 'complete' && event !== 'error') return null;
+
   try {
     if (event === 'progress') return { type: 'progress', data: JSON.parse(data) as ProgressEvent };
     if (event === 'complete') return { type: 'complete', data: JSON.parse(data) as Shed };
-    if (event === 'error') return { type: 'error', data: JSON.parse(data) as APIError };
+    return { type: 'error', data: JSON.parse(data) as APIError };
   } catch {
-    if (event === 'error') {
-      return { type: 'error', data: { error: { code: 'PARSE_ERROR', message: data } } };
-    }
+    return {
+      type: 'error',
+      data: {
+        error: {
+          code: 'UPSTREAM_PARSE_ERROR',
+          message: `malformed SSE payload for event "${event}": ${data.slice(0, 200)}`,
+        },
+      },
+    };
   }
-  return null;
 }

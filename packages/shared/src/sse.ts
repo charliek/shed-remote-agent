@@ -52,6 +52,8 @@ export async function* parseSSEStream(
         apply(line);
       }
     }
+    // Flush any pending incomplete UTF-8 bytes held by the streaming decoder.
+    buffer += decoder.decode();
     // EOF flush: buffer may still hold a final line without a newline
     if (buffer) {
       apply(buffer.replace(/\r$/, ''));

@@ -26,7 +26,12 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="flex min-h-screen items-center justify-center p-6">
           <div className="max-w-md space-y-2 rounded-lg border border-destructive bg-card p-6 text-card-foreground">
             <h1 className="font-semibold text-lg">Something went wrong</h1>
-            <p className="text-muted-foreground text-sm">{this.state.error.message}</p>
+            <p className="text-muted-foreground text-sm">Please refresh and try again.</p>
+            {import.meta.env.DEV && (
+              <p className="break-all pt-2 font-mono text-muted-foreground text-xs">
+                {this.state.error.message}
+              </p>
+            )}
           </div>
         </div>
       );

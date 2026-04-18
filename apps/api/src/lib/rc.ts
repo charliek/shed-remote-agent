@@ -62,9 +62,26 @@ export async function bootstrap(opts: {
 
 export async function kill(opts: { host: Host; shed: string; slug: string }): Promise<void> {
   const name = tmuxName(opts.slug);
-  await run(target(opts.host, opts.shed), ['tmux', 'kill-session', '-t', name], {
+  const result = await run(target(opts.host, opts.shed), ['tmux', 'kill-session', '-t', name], {
     timeoutMs: 5_000,
   });
+  if (result.code === 0) return;
+
+  const cls = classifySSHError(result.stderr, result.code);
+  if (cls === 'auth-denied') {
+    throw new AppError(
+      'SSH_AUTH_DENIED',
+      `SSH authentication denied: ${result.stderr.trim()}`,
+      401,
+    );
+  }
+  if (cls === 'host-unreachable' || cls === 'connection-refused' || cls === 'timeout') {
+    throw new AppError('SSH_UNREACHABLE', `SSH ${cls}: ${result.stderr.trim()}`, 502);
+  }
+  // tmux kill-session returns non-zero when the session doesn't exist — idempotent success.
+  if (/can't find session|no session/i.test(result.stderr)) return;
+
+  throw new AppError('KILL_FAILED', result.stderr.trim() || `ssh exited ${result.code}`, 502);
 }
 
 export async function probe(opts: {
