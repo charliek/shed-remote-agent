@@ -44,6 +44,12 @@ github:
 `gh` must be authenticated on the machine running the backend
 (`gh auth login` once).
 
+## Documentation
+
+Full documentation is published at
+**[charliek.github.io/shed-remote-agent](https://charliek.github.io/shed-remote-agent/)**
+and auto-deploys on every push to `main` that touches the docs.
+
 ## Develop
 
 ```bash
@@ -55,6 +61,15 @@ bun test --cwd apps/api
 ```
 
 The Vite dev server proxies `/api` to `:8787`.
+
+### Documentation development
+
+The docs use `mkdocs-material` managed by `uv`:
+
+```bash
+make docs            # build into site-build/
+make docs-serve      # serve on http://127.0.0.1:7070
+```
 
 ## Phase map
 

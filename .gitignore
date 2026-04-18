@@ -26,3 +26,8 @@ coverage/
 .prox/
 
 .claude/settings.local.json
+
+# Docs (mkdocs + uv)
+site-build/
+.venv/
+__pycache__/
