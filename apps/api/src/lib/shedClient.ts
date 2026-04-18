@@ -10,10 +10,22 @@ import {
 } from '@shed-remote-agent/shared';
 import { AppError } from './errors.js';
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export type ShedCreateEvent =
   | { type: 'progress'; data: ProgressEvent }
   | { type: 'complete'; data: Shed }
   | { type: 'error'; data: APIError };
+
+function upstreamTransportError(err: unknown, method: string, path: string): AppError {
+  const aborted =
+    err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'));
+  const code = aborted ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_TRANSPORT_ERROR';
+  const message = aborted
+    ? `Upstream request timed out after ${REQUEST_TIMEOUT_MS}ms: ${method} ${path}`
+    : `Upstream request failed: ${method} ${path} — ${err instanceof Error ? err.message : String(err)}`;
+  return new AppError(code, message, 502);
+}
 
 export class ShedClient {
   private baseUrl: string;
@@ -23,11 +35,23 @@ export class ShedClient {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw upstreamTransportError(err, method, path);
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (res.status === 204) return undefined as T;
 
@@ -98,11 +122,18 @@ export class ShedClient {
   }
 
   async *createShedSSE(req: CreateShedRequest): AsyncGenerator<ShedCreateEvent> {
-    const res = await fetch(`${this.baseUrl}/api/sheds`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify(req),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/api/sheds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        body: JSON.stringify(req),
+      });
+    } catch (err) {
+      const e = upstreamTransportError(err, 'POST', '/api/sheds');
+      yield { type: 'error', data: { error: { code: e.code, message: e.message } } };
+      return;
+    }
 
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => '');
