@@ -1,6 +1,5 @@
 import { createRcRequestSchema, type RcSession } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
-import { AppError } from '../lib/errors.js';
 import { clientFor, clientForName } from '../lib/hostClients.js';
 import {
   bootstrap,
@@ -10,6 +9,7 @@ import {
   probeUntilReady,
   RC_PREFIX,
 } from '../lib/rc.js';
+import { parseJsonBody } from '../lib/requestBody.js';
 
 const rc = new Hono();
 
@@ -23,17 +23,7 @@ rc.get('/:host/:name/rc', async (c) => {
 rc.post('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
   const { host: h } = await clientForName(host);
-
-  const raw = await c.req.text();
-  let parsed: unknown = {};
-  if (raw.trim().length > 0) {
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw AppError.badRequest('Invalid JSON body');
-    }
-  }
-  const body = createRcRequestSchema.parse(parsed);
+  const body = createRcRequestSchema.parse(await parseJsonBody(c));
 
   // Fail fast with a proper 404 if the shed doesn't exist, before paying an
   // SSH round-trip that would surface as a generic 500.

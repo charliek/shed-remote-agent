@@ -74,7 +74,9 @@ async function listRemote(host: string, user: string, root: string): Promise<Wor
   const target = { host, user, port: 22 };
 
   // One-shot: list top-level dirs and probe .git in a single remote command.
-  const script = `set -e; cd ${shellQuote(root)} 2>/dev/null || exit 0
+  // `set -e` + no `|| exit 0` so a missing/unreadable root surfaces as a
+  // failure (matching listLocal's WORKSPACE_READ_FAILED behavior).
+  const script = `set -e; cd ${shellQuote(root)}
 ls -1 2>/dev/null | while read d; do [ -d "$d" ] && echo "$d"; done
 echo '---GIT---'
 for d in */; do [ -d "$d.git" ] && echo "\${d%/}"; done`;
@@ -82,7 +84,15 @@ for d in */; do [ -d "$d.git" ] && echo "\${d%/}"; done`;
   const result = await run(target, ['bash', '-lc', script], { timeoutMs: 10_000 });
   if (result.code !== 0) {
     const cls = classifySSHError(result.stderr, result.code);
-    throw new AppError('SSH_ERROR', `ssh ${cls}: ${result.stderr.trim() || 'no stderr'}`, 502);
+    // Connectivity errors (auth-denied, host-unreachable, etc) stay as SSH_ERROR.
+    // A successful SSH connection that couldn't cd/ls the root is treated as a
+    // workspace-config problem, not a transport problem.
+    const code = cls === 'command-failed' ? 'WORKSPACE_READ_FAILED' : 'SSH_ERROR';
+    throw new AppError(
+      code,
+      `${code === 'WORKSPACE_READ_FAILED' ? `failed to read ${root}` : `ssh ${cls}`}: ${result.stderr.trim() || 'no stderr'}`,
+      502,
+    );
   }
 
   const [namesPart = '', gitPart = ''] = result.stdout.split('---GIT---');

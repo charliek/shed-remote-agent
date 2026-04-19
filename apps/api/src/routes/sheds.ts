@@ -5,6 +5,7 @@ import { getHosts } from '../lib/configStore.js';
 import { AppError } from '../lib/errors.js';
 import { clientFor, clientForName } from '../lib/hostClients.js';
 import { RC_PREFIX } from '../lib/rc.js';
+import { parseJsonBody } from '../lib/requestBody.js';
 
 const sheds = new Hono();
 
@@ -37,17 +38,7 @@ sheds.get('/', async (c) => {
 sheds.post('/:host', async (c) => {
   const { host } = c.req.param();
   const { client } = await clientForName(host);
-
-  const raw = await c.req.text();
-  let parsed: unknown = {};
-  if (raw.trim().length > 0) {
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw AppError.badRequest('Invalid JSON body');
-    }
-  }
-  const body = createShedRequestSchema.parse(parsed);
+  const body = createShedRequestSchema.parse(await parseJsonBody(c));
 
   return streamSSE(c, async (stream) => {
     let completed = false;
