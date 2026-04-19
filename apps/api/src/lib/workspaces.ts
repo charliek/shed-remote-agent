@@ -76,10 +76,12 @@ async function listRemote(host: string, user: string, root: string): Promise<Wor
   // One-shot: list top-level dirs and probe .git in a single remote command.
   // `set -e` + no `|| exit 0` so a missing/unreadable root surfaces as a
   // failure (matching listLocal's WORKSPACE_READ_FAILED behavior).
+  // Use `if/then/fi` (not `[ ... ] && echo`) inside loops so a non-matching
+  // last iteration doesn't leak a non-zero exit to the whole script.
   const script = `set -e; cd ${shellQuote(root)}
-ls -1 2>/dev/null | while read d; do [ -d "$d" ] && echo "$d"; done
+ls -1 2>/dev/null | while IFS= read -r d; do if [ -d "$d" ]; then echo "$d"; fi; done
 echo '---GIT---'
-for d in */; do [ -d "$d.git" ] && echo "\${d%/}"; done`;
+for d in */; do if [ -d "$d.git" ]; then echo "\${d%/}"; fi; done`;
 
   const result = await run(target, ['bash', '-lc', script], { timeoutMs: 10_000 });
   if (result.code !== 0) {
