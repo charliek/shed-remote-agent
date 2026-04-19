@@ -83,14 +83,20 @@ for d in */; do [ -d "$d.git" ] && echo "\${d%/}"; done`;
 
   const result = await run(target, ['bash', '-lc', script], { timeoutMs: 10_000 });
   if (result.code !== 0) {
-    const cls = classifySSHError(result.stderr, result.code);
-    // Connectivity errors (auth-denied, host-unreachable, etc) stay as SSH_ERROR.
-    // A successful SSH connection that couldn't cd/ls the root is treated as a
-    // workspace-config problem, not a transport problem.
-    const code = cls === 'command-failed' ? 'WORKSPACE_READ_FAILED' : 'SSH_ERROR';
+    // Use the exit code (not the stderr classifier) to decide transport vs
+    // remote-command failure. ssh(1) uses 255 for any connection/protocol
+    // error; `run()` uses our sentinel 124 for its timeout. Anything else is
+    // the remote command's own exit status — so `cd ${root}` failing with a
+    // filesystem "Permission denied" lands in WORKSPACE_READ_FAILED instead
+    // of being misclassified as SSH auth-denied.
+    const isTransportFailure = result.code === 124 || result.code === 255;
+    if (isTransportFailure) {
+      const cls = classifySSHError(result.stderr, result.code);
+      throw new AppError('SSH_ERROR', `ssh ${cls}: ${result.stderr.trim() || 'no stderr'}`, 502);
+    }
     throw new AppError(
-      code,
-      `${code === 'WORKSPACE_READ_FAILED' ? `failed to read ${root}` : `ssh ${cls}`}: ${result.stderr.trim() || 'no stderr'}`,
+      'WORKSPACE_READ_FAILED',
+      `failed to read ${root}: ${result.stderr.trim() || 'no stderr'}`,
       502,
     );
   }
