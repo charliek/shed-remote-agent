@@ -1,7 +1,7 @@
 import { createRcRequestSchema, type RcSession } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
 import { AppError } from '../lib/errors.js';
-import { clientForName } from '../lib/hostClients.js';
+import { clientFor, clientForName } from '../lib/hostClients.js';
 import {
   bootstrap,
   DEFAULT_WORKDIR,
@@ -34,6 +34,10 @@ rc.post('/:host/:name/rc', async (c) => {
     }
   }
   const body = createRcRequestSchema.parse(parsed);
+
+  // Fail fast with a proper 404 if the shed doesn't exist, before paying an
+  // SSH round-trip that would surface as a generic 500.
+  await clientFor(h).getShed(name);
 
   const { slug, tmuxSession, displayName, workdir } = await bootstrap({
     host: h,
