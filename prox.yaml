@@ -1,0 +1,30 @@
+# Local dev topology for shed-remote-agent.
+#
+# Covers two things in one place:
+#   1. This project's own services (api + web).
+#   2. One shed-host-agent process per shed host we want to broker credentials
+#      for (mini2, mini3). Each agent subscribes to a single shed-server over
+#      tailscale and answers ssh-agent / docker-credentials extension requests
+#      using the local user's keys (~/.ssh, ~/.docker/config.json).
+#
+# Add more hosts by:
+#   1. Writing ~/.config/shed/extensions.<host>.yaml
+#   2. Adding a shed-host-agent-<host> entry below
+#
+# HTTPS routing for the app is still handled by devproxy (see devproxy.yaml);
+# prox here is only a process supervisor.
+
+processes:
+  api:
+    cmd: bun run dev
+    cwd: apps/api
+
+  web:
+    cmd: bun run dev
+    cwd: apps/web
+
+  shed-host-agent-mini2:
+    cmd: /home/charliek/projects/shed-extensions/bin/shed-host-agent -config /home/charliek/.config/shed/extensions.mini2.yaml
+
+  shed-host-agent-mini3:
+    cmd: /home/charliek/projects/shed-extensions/bin/shed-host-agent -config /home/charliek/.config/shed/extensions.mini3.yaml
