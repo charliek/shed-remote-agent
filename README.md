@@ -64,7 +64,7 @@ The Vite dev server proxies `/api` to `:8787`.
 
 ## Run on another tailnet host
 
-Bring this up on any always-on machine on the tailnet (e.g. a mac mini)
+Bring this up on any always-on machine on the tailnet (e.g. a Mac mini)
 that should host the orchestrator while shed servers stay running on their
 own hosts.
 
