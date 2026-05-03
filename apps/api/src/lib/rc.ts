@@ -38,12 +38,19 @@ export async function bootstrap(opts: {
   const workdir = opts.workdir ?? DEFAULT_WORKDIR;
   const name = tmuxName(slug);
 
+  // Run tmux directly as the ssh command instead of wrapping in `bash -c`.
+  // When tmux is a grandchild of sshd through a bash shell, the bash
+  // process holds fd references that prevent the connection from closing
+  // cleanly (and on shed images without lingering enabled, can also cause
+  // the tmux server to be reaped on logout). Direct invocation lets sshd
+  // hand off straight to tmux, which forks its server into its own
+  // process group and returns immediately under -d.
   const inner = `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
-  const cmd = `tmux new-session -d -s ${shellQuote(name)} -c ${shellQuote(workdir)} ${shellQuote(inner)}`;
-
-  const result = await run(target(opts.host, opts.shed), ['bash', '-lc', cmd], {
-    timeoutMs: 10_000,
-  });
+  const result = await run(
+    target(opts.host, opts.shed),
+    ['tmux', 'new-session', '-d', '-s', name, '-c', workdir, inner],
+    { timeoutMs: 10_000 },
+  );
 
   if (result.code !== 0) {
     const cls = classifySSHError(result.stderr, result.code);
@@ -90,10 +97,17 @@ export async function probe(opts: {
   slug: string;
 }): Promise<{ state: RcState; url?: string }> {
   const name = tmuxName(opts.slug);
-  const cmd = `tmux has-session -t ${shellQuote(name)} 2>/dev/null && tmux capture-pane -t ${shellQuote(name)} -p -S -200`;
-  const result = await run(target(opts.host, opts.shed), ['bash', '-lc', cmd], {
-    timeoutMs: 5_000,
-  });
+  // Run tmux directly without a `bash -c` wrapper. On shed images where the
+  // user has no controlling terminal, tmux fails ("open terminal failed:
+  // not a terminal") when invoked as a child of bash, but works fine when
+  // sshd execs it directly. capture-pane already returns non-zero if the
+  // session doesn't exist, so the previous has-session preflight is
+  // redundant.
+  const result = await run(
+    target(opts.host, opts.shed),
+    ['tmux', 'capture-pane', '-t', name, '-p', '-S', '-200'],
+    { timeoutMs: 5_000 },
+  );
 
   if (result.code !== 0) {
     const cls = classifySSHError(result.stderr, result.code);
@@ -129,7 +143,12 @@ for n in $names; do
   tmux capture-pane -t "$n" -p -S -200 2>/dev/null || true
 done
 `;
-  const result = await run(target(opts.host, opts.shed), ['bash', '-lc', script], {
+  // Pipe the script via stdin instead of `bash -lc`. On shed images where
+  // the user has no controlling terminal, tmux invoked as a child of `bash
+  // -c` fails with "open terminal failed: not a terminal", but works when
+  // bash reads commands from stdin (the parent process layout differs).
+  const result = await run(target(opts.host, opts.shed), ['bash'], {
+    stdin: script,
     timeoutMs: 8_000,
   });
 

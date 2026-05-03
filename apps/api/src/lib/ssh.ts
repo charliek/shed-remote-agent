@@ -1,3 +1,5 @@
+import { shellQuote } from './shell.js';
+
 export interface SSHTarget {
   host: string;
   user: string;
@@ -48,6 +50,13 @@ export async function run(
   argv: string[],
   opts: RunOptions = {},
 ): Promise<SSHResult> {
+  // The ssh client joins multi-arg commands with single spaces and the
+  // remote shell re-parses the result, stripping any quoting we put in
+  // argv. Pre-quote each token so the remote shell reconstructs the
+  // intended argv exactly, and pass the joined string as a single
+  // positional arg so ssh has nothing to re-join.
+  const wireCmd = argv.map(shellQuote).join(' ');
+
   const args = [
     '-o',
     'BatchMode=yes',
@@ -60,7 +69,7 @@ export async function run(
     ...(opts.sshArgs ?? []),
     `${target.user}@${target.host}`,
     '--',
-    ...argv,
+    wireCmd,
   ];
 
   const proc = Bun.spawn(['ssh', ...args], {
