@@ -6,6 +6,7 @@ import { classifySSHError, run, type SSHTarget } from './ssh.js';
 export const RC_PREFIX = 'rc-';
 export const DEFAULT_WORKDIR = '/workspace';
 const PANE_SEP = '---RC-PANE---';
+const NAME_SEP = '---RC-NAME---';
 
 function target(host: Host, shedName: string): SSHTarget {
   return { host: host.host, user: shedName, port: host.sshPort };
@@ -24,6 +25,15 @@ function genSlug(): string {
 
 function tmuxName(slug: string): string {
   return `${RC_PREFIX}${slug}`;
+}
+
+// tmux's command parser re-tokenizes the argument to `-e` on whitespace
+// and interprets a small set of meta characters even after the outer
+// shell has handed it a single argv element. A multi-word value like
+// "Friday Bug Fix" would silently abort the new session. Backslash-escape
+// the meta chars so tmux's internal parser preserves the original value.
+function tmuxArgEscape(s: string): string {
+  return s.replace(/[\\$"' \t]/g, '\\$&');
 }
 
 export async function bootstrap(opts: {
@@ -48,7 +58,18 @@ export async function bootstrap(opts: {
   const inner = `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
   const result = await run(
     target(opts.host, opts.shed),
-    ['tmux', 'new-session', '-d', '-s', name, '-c', workdir, inner],
+    [
+      'tmux',
+      'new-session',
+      '-d',
+      '-s',
+      name,
+      '-c',
+      workdir,
+      '-e',
+      `SRA_DISPLAY_NAME=${tmuxArgEscape(displayName)}`,
+      inner,
+    ],
     { timeoutMs: 10_000 },
   );
 
@@ -140,6 +161,7 @@ export async function listRcSessions(opts: { host: Host; shed: string }): Promis
 names=$(tmux ls -F '#{session_name}' 2>/dev/null | grep '^${RC_PREFIX}' || true)
 for n in $names; do
   echo "${PANE_SEP}${PANE_SEP} $n"
+  echo "${NAME_SEP}$(tmux show-environment -t "$n" SRA_DISPLAY_NAME 2>/dev/null | sed -n 's/^SRA_DISPLAY_NAME=//p')"
   tmux capture-pane -t "$n" -p -S -200 2>/dev/null || true
 done
 `;
@@ -160,17 +182,25 @@ done
 
   const sections = result.stdout.split(`${PANE_SEP}${PANE_SEP} `).slice(1);
   return sections.map<RcSession>((section) => {
-    const nlIdx = section.indexOf('\n');
-    const tmuxSession = (nlIdx === -1 ? section : section.slice(0, nlIdx)).trim();
-    const pane = nlIdx === -1 ? '' : section.slice(nlIdx + 1);
+    const lines = section.split('\n');
+    const tmuxSession = (lines[0] ?? '').trim();
     const slug = tmuxSession.slice(RC_PREFIX.length);
+
+    let storedName = '';
+    let paneStart = 1;
+    if (lines[1]?.startsWith(NAME_SEP)) {
+      storedName = lines[1].slice(NAME_SEP.length).trim();
+      paneStart = 2;
+    }
+
+    const pane = lines.slice(paneStart).join('\n');
     const { state, url } = classifyPane(pane);
     return {
       slug,
       tmux_session: tmuxSession,
       shed_name: opts.shed,
       host: opts.host.name,
-      display_name: `${opts.shed}/${slug}`,
+      display_name: storedName || `${opts.shed}/${slug}`,
       workdir: DEFAULT_WORKDIR,
       state,
       url,
