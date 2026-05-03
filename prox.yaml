@@ -20,11 +20,8 @@
 # prox here is only a process supervisor.
 
 processes:
-  api:
-    cmd: bun run dev:api
-
-  web:
-    cmd: bun run dev:web
+  api: bun run dev:api
+  web: bun run dev:web
 
   shed-host-agent-mini2:
     cmd: shed-host-agent -config host-agents/extensions.mini2.yaml
