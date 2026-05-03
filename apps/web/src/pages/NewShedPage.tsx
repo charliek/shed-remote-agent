@@ -35,6 +35,7 @@ export default function NewShedPage() {
   const [localDir, setLocalDir] = useState('');
 
   const [startRc, setStartRc] = useState(true);
+  const [rcDisplayName, setRcDisplayName] = useState('');
 
   const [progress, setProgress] = useState<ProgressLine[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -78,7 +79,12 @@ export default function NewShedPage() {
           const shedName = ev.data.name;
           if (startRc) {
             try {
-              await api.createRcSession(effectiveHost, shedName, {});
+              const trimmed = rcDisplayName.trim();
+              await api.createRcSession(
+                effectiveHost,
+                shedName,
+                trimmed ? { display_name: trimmed } : {},
+              );
             } catch (rcErr) {
               // Shed is up; rc bootstrap failed. Keep the user on this page so
               // they see the error, and leave a link to the detail page.
@@ -182,21 +188,38 @@ export default function NewShedPage() {
           <LocalDirPicker host={effectiveHost} value={localDir} onChange={setLocalDir} />
         )}
 
-        <label className="flex cursor-pointer items-center gap-2 rounded-md border border-border p-3">
-          <input
-            type="checkbox"
-            checked={startRc}
-            onChange={(e) => setStartRc(e.target.checked)}
-            className="h-4 w-4 accent-primary"
-          />
-          <div className="flex-1 text-sm">
-            <div className="font-medium">Start remote-control on create</div>
-            <div className="text-muted-foreground text-xs">
-              Launches <code className="font-mono">claude remote-control</code> in /workspace as
-              soon as the shed is up.
+        <div className="space-y-3 rounded-md border border-border p-3">
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={startRc}
+              onChange={(e) => setStartRc(e.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            <div className="flex-1 text-sm">
+              <div className="font-medium">Start remote-control on create</div>
+              <div className="text-muted-foreground text-xs">
+                Launches <code className="font-mono">claude remote-control</code> in /workspace as
+                soon as the shed is up.
+              </div>
             </div>
-          </div>
-        </label>
+          </label>
+          {startRc && (
+            <Field
+              label="RC name"
+              hint="shown in the Claude remote-control UI; defaults to shed/slug"
+            >
+              <input
+                type="text"
+                value={rcDisplayName}
+                onChange={(e) => setRcDisplayName(e.target.value)}
+                placeholder={`${name.trim() || 'shed-name'}/<slug>`}
+                maxLength={100}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </Field>
+          )}
+        </div>
 
         <div className="flex items-center justify-end gap-2 pt-2">
           <Button disabled={disabled} onClick={onSubmit}>

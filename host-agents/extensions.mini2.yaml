@@ -1,0 +1,32 @@
+# shed-host-agent config for connecting to mini2 over tailscale.
+# Instance name: mini2
+
+server: http://mini2:8080
+
+ssh:
+  mode: ""
+  approval:
+    enabled: false
+    policy: per-session
+    session_ttl: 4h
+
+# aws extension disabled — mini2's shed-server config has aws-credentials
+# commented out, so no shed will ever issue aws-credentials requests.
+# aws:
+#   source_profile: default
+#   default_role: ""
+#   session_duration: 1h
+#   cache_refresh_before: 5m
+
+docker:
+  # Exact-hostname allowlist (no wildcards).
+  # - ghcr.io: shed project images (ghcr.io/charliek/shed-*)
+  # - us-central1-docker.pkg.dev: GCP Artifact Registry used by slaudio
+  registries:
+    - ghcr.io
+    - us-central1-docker.pkg.dev
+  allow_all: false
+
+logging:
+  enabled: true
+  path: ~/.local/share/shed/extensions-audit-mini2.log
