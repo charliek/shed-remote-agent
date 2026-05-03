@@ -62,6 +62,39 @@ bun test --cwd apps/api
 
 The Vite dev server proxies `/api` to `:8787`.
 
+## Run on another tailnet host
+
+Bring this up on any always-on machine on the tailnet (e.g. a mac mini)
+that should host the orchestrator while shed servers stay running on their
+own hosts.
+
+Prereqs on the new machine:
+
+- [Bun](https://bun.com), [`prox`](https://github.com/charliek/prox), and
+  `gh` (optional, for the repo picker)
+- `shed-host-agent` on `$PATH` — install from the
+  [shed-extensions releases](https://github.com/charliek/shed-extensions/releases)
+  or `make build-host` in a local checkout and symlink the binary into
+  `~/.local/bin/` (or `/usr/local/bin/`)
+- `~/.shed/config.yaml` listing the shed servers (this is the shed CLI's
+  own config — copy it from your other machine)
+- `~/.config/shed-remote-agent/config.yaml` — copy
+  [`config.example.yaml`](./config.example.yaml) and adjust
+  `local_dir.path` for the platform (`/Users/...` on macOS)
+
+Then:
+
+```bash
+git clone https://github.com/charliek/shed-remote-agent.git
+cd shed-remote-agent
+bun install
+prox up                    # api + web + one shed-host-agent per host in host-agents/
+```
+
+Host-agent configs live in [`host-agents/`](./host-agents/). To broker creds
+for an additional shed host, add a `host-agents/extensions.<host>.yaml` and
+a matching `shed-host-agent-<host>` entry in [`prox.yaml`](./prox.yaml).
+
 ### Documentation development
 
 The docs use `mkdocs-material` managed by `uv`:
