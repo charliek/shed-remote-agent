@@ -75,7 +75,14 @@ export function RcCard({ s }: { s: RcSession }) {
           </div>
 
           {s.url && (
-            <div className="mt-2 break-all font-mono text-muted-foreground text-xs">{s.url}</div>
+            <a
+              href={s.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 block break-all font-mono text-muted-foreground text-xs hover:text-foreground"
+            >
+              {s.url}
+            </a>
           )}
 
           {info.hint && <div className="mt-2 text-muted-foreground text-xs">{info.hint}</div>}
