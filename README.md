@@ -88,7 +88,7 @@ Then:
 git clone https://github.com/charliek/shed-remote-agent.git
 cd shed-remote-agent
 bun install
-prox up                    # api + web + one shed-host-agent per host in host-agents/
+prox up                    # api + web + every shed-host-agent-* entry declared in prox.yaml
 ```
 
 Host-agent configs live in [`host-agents/`](./host-agents/). To broker creds
