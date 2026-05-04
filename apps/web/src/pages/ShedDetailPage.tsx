@@ -240,25 +240,25 @@ export default function ShedDetailPage() {
             )}
           </section>
 
-          <section className="mt-6">
-            <h2 className="mb-2 font-semibold text-sm uppercase tracking-wide">tmux sessions</h2>
-            {!running ? (
-              <EmptyState
-                title="Shed not running"
-                description="Start the shed to list its tmux sessions."
-              />
-            ) : sessions.isLoading ? (
-              <div className="text-muted-foreground text-sm">Loading…</div>
-            ) : sessions.data?.sessions?.length ? (
-              <div className="space-y-2">
-                {sessions.data.sessions.map((t) => (
-                  <TmuxSessionCard key={t.name} host={host} shed={name} s={t} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="No tmux sessions" />
-            )}
-          </section>
+          {(() => {
+            // Anything not in the curated rc list above — orphans, manually
+            // started tmuxes, etc. Empty for the common case, so the whole
+            // section is hidden until something actually shows up.
+            const others = (sessions.data?.sessions ?? []).filter((t) => !t.is_remote_control);
+            if (!running || others.length === 0) return null;
+            return (
+              <section className="mt-6">
+                <h2 className="mb-2 font-semibold text-sm uppercase tracking-wide">
+                  Other tmux sessions
+                </h2>
+                <div className="space-y-2">
+                  {others.map((t) => (
+                    <TmuxSessionCard key={t.name} host={host} shed={name} s={t} />
+                  ))}
+                </div>
+              </section>
+            );
+          })()}
         </>
       )}
     </PageShell>
