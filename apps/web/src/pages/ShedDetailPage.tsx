@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RcCard } from '@/components/RcCard';
 import { RcKindPicker } from '@/components/RcKindPicker';
+import { TmuxSessionCard } from '@/components/TmuxSessionCard';
 import { Badge, Button, Card, EmptyState, PageShell, StatusPill } from '@/components/ui';
 import { type APIError, api } from '@/lib/api';
 
@@ -251,17 +252,7 @@ export default function ShedDetailPage() {
             ) : sessions.data?.sessions?.length ? (
               <div className="space-y-2">
                 {sessions.data.sessions.map((t) => (
-                  <Card key={t.name} className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate font-mono text-sm">{t.name}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {t.window_count ?? 0} window(s) · {t.attached ? 'attached' : 'detached'}
-                        </div>
-                      </div>
-                      {t.is_remote_control && <Badge variant="secondary">rc</Badge>}
-                    </div>
-                  </Card>
+                  <TmuxSessionCard key={t.name} host={host} shed={name} s={t} />
                 ))}
               </div>
             ) : (
