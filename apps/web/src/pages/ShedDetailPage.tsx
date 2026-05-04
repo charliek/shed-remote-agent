@@ -1,8 +1,12 @@
+import { DEFAULT_RC_KIND, type RcKind } from '@shed-remote-agent/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, Play, Plus, Square, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RcCard } from '@/components/RcCard';
+import { RcKindPicker } from '@/components/RcKindPicker';
+import { TmuxSessionCard } from '@/components/TmuxSessionCard';
 import { Badge, Button, Card, EmptyState, PageShell, StatusPill } from '@/components/ui';
 import { type APIError, api } from '@/lib/api';
 
@@ -67,8 +71,9 @@ export default function ShedDetailPage() {
     },
     onError: (e: APIError) => toast.error(e.message),
   });
+  const [rcKind, setRcKind] = useState<RcKind>(DEFAULT_RC_KIND);
   const newRcM = useMutation({
-    mutationFn: () => api.createRcSession(host, name, {}),
+    mutationFn: () => api.createRcSession(host, name, { kind: rcKind }),
     onSuccess: (s) => {
       toast.success(`Session ${s.slug} created`);
       qc.invalidateQueries({ queryKey: ['rc', host, name] });
@@ -201,6 +206,12 @@ export default function ShedDetailPage() {
               </Button>
             </div>
 
+            {running && (
+              <div className="mb-3">
+                <RcKindPicker value={rcKind} onChange={setRcKind} disabled={newRcM.isPending} />
+              </div>
+            )}
+
             {!running ? (
               <EmptyState
                 title="Shed not running"
@@ -229,35 +240,25 @@ export default function ShedDetailPage() {
             )}
           </section>
 
-          <section className="mt-6">
-            <h2 className="mb-2 font-semibold text-sm uppercase tracking-wide">tmux sessions</h2>
-            {!running ? (
-              <EmptyState
-                title="Shed not running"
-                description="Start the shed to list its tmux sessions."
-              />
-            ) : sessions.isLoading ? (
-              <div className="text-muted-foreground text-sm">Loading…</div>
-            ) : sessions.data?.sessions?.length ? (
-              <div className="space-y-2">
-                {sessions.data.sessions.map((t) => (
-                  <Card key={t.name} className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate font-mono text-sm">{t.name}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {t.window_count ?? 0} window(s) · {t.attached ? 'attached' : 'detached'}
-                        </div>
-                      </div>
-                      {t.is_remote_control && <Badge variant="secondary">rc</Badge>}
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="No tmux sessions" />
-            )}
-          </section>
+          {(() => {
+            // Anything not in the curated rc list above — orphans, manually
+            // started tmuxes, etc. Empty for the common case, so the whole
+            // section is hidden until something actually shows up.
+            const others = (sessions.data?.sessions ?? []).filter((t) => !t.is_remote_control);
+            if (!running || others.length === 0) return null;
+            return (
+              <section className="mt-6">
+                <h2 className="mb-2 font-semibold text-sm uppercase tracking-wide">
+                  Other tmux sessions
+                </h2>
+                <div className="space-y-2">
+                  {others.map((t) => (
+                    <TmuxSessionCard key={t.name} host={host} shed={name} s={t} />
+                  ))}
+                </div>
+              </section>
+            );
+          })()}
         </>
       )}
     </PageShell>

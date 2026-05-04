@@ -10,6 +10,11 @@ export const rcStateSchema = z.enum([
 ]);
 export type RcState = z.infer<typeof rcStateSchema>;
 
+export const rcKindSchema = z.enum(['agent', 'repl', 'shell']);
+export type RcKind = z.infer<typeof rcKindSchema>;
+
+export const DEFAULT_RC_KIND: RcKind = 'repl';
+
 export const rcSessionSchema = z.object({
   slug: z.string(),
   tmux_session: z.string(),
@@ -17,6 +22,7 @@ export const rcSessionSchema = z.object({
   host: z.string(),
   display_name: z.string(),
   workdir: z.string(),
+  kind: rcKindSchema,
   state: rcStateSchema,
   url: z.string().optional(),
   error: z.string().optional(),
@@ -30,6 +36,7 @@ export const createRcRequestSchema = z.object({
     .optional(),
   display_name: z.string().min(1).max(100).optional(),
   workdir: z.string().optional(),
+  kind: rcKindSchema.optional(),
 });
 export type CreateRcRequest = z.infer<typeof createRcRequestSchema>;
 

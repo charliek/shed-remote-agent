@@ -1,4 +1,4 @@
-import { createRcRequestSchema, type RcSession } from '@shed-remote-agent/shared';
+import { createRcRequestSchema, DEFAULT_RC_KIND, type RcSession } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
 import { clientFor, clientForName } from '../lib/hostClients.js';
 import {
@@ -24,6 +24,7 @@ rc.post('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
   const { host: h } = await clientForName(host);
   const body = createRcRequestSchema.parse(await parseJsonBody(c));
+  const kind = body.kind ?? DEFAULT_RC_KIND;
 
   // Fail fast with a proper 404 if the shed doesn't exist, before paying an
   // SSH round-trip that would surface as a generic 500.
@@ -35,9 +36,10 @@ rc.post('/:host/:name/rc', async (c) => {
     slug: body.slug,
     displayName: body.display_name,
     workdir: body.workdir,
+    kind,
   });
 
-  const state = await probeUntilReady({ host: h, shed: name, slug });
+  const state = await probeUntilReady({ host: h, shed: name, slug, kind });
 
   const session: RcSession = {
     slug,
@@ -46,6 +48,7 @@ rc.post('/:host/:name/rc', async (c) => {
     host,
     display_name: displayName,
     workdir,
+    kind,
     state: state.state,
     url: state.url,
   };

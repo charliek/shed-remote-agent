@@ -26,6 +26,17 @@ Designed to live behind Tailscale — there is no auth layer.
 
 ## Configuration
 
+### `apps/api/.env`
+
+Per-machine API runtime config (CORS origins, log level, ports, etc.).
+Bun loads it automatically — copy
+[`apps/api/.env.example`](./apps/api/.env.example) to `apps/api/.env`
+and edit. The `.env` is gitignored.
+
+The `CORS_ORIGINS` value gates both the HTTP CORS middleware and the
+in-browser terminal WebSocket; if you serve the page from anywhere
+other than `http://localhost:5173`, add that origin here.
+
 ### `~/.shed/config.yaml`
 
 Shed hosts are discovered from the shed CLI's own config file — no duplication.
