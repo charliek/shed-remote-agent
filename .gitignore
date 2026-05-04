@@ -24,6 +24,7 @@ coverage/
 .temp/
 .tmp/
 .prox/
+.playwright-cli/
 
 .claude/settings.local.json
 

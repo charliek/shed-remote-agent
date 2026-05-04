@@ -1,13 +1,15 @@
 import app from './app.js';
 import { config } from './config.js';
 import { logger } from './lib/logger.js';
+import { websocket } from './routes/rcAttach.js';
 
 const server = Bun.serve({
   port: config.port,
   hostname: config.host,
-  // Disable idle timeout so long-running SSE streams aren't cut off.
+  // Disable idle timeout so long-running SSE streams and WS attaches aren't cut off.
   idleTimeout: 0,
   fetch: app.fetch,
+  websocket,
 });
 
 logger.info(

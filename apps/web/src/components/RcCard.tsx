@@ -1,7 +1,8 @@
 import type { RcSession, RcState } from '@shed-remote-agent/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Copy, ExternalLink, Loader2, Trash2 } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, Terminal as TerminalIcon, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { type APIError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -105,6 +106,19 @@ export function RcCard({ s }: { s: RcSession }) {
               {copied ? 'Copied' : 'Copy URL'}
             </Button>
           </>
+        )}
+        {s.state !== 'dead' && (
+          <Link
+            to={`/sheds/${encodeURIComponent(s.host)}/${encodeURIComponent(
+              s.shed_name,
+            )}/rc/${encodeURIComponent(s.slug)}/attach`}
+            className="contents"
+          >
+            <Button variant="secondary">
+              <TerminalIcon className="h-4 w-4" />
+              Terminal
+            </Button>
+          </Link>
         )}
         <Button
           variant="ghost"
