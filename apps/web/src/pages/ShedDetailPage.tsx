@@ -1,8 +1,11 @@
+import { DEFAULT_RC_KIND, type RcKind } from '@shed-remote-agent/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, Play, Plus, Square, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RcCard } from '@/components/RcCard';
+import { RcKindPicker } from '@/components/RcKindPicker';
 import { Badge, Button, Card, EmptyState, PageShell, StatusPill } from '@/components/ui';
 import { type APIError, api } from '@/lib/api';
 
@@ -67,8 +70,9 @@ export default function ShedDetailPage() {
     },
     onError: (e: APIError) => toast.error(e.message),
   });
+  const [rcKind, setRcKind] = useState<RcKind>(DEFAULT_RC_KIND);
   const newRcM = useMutation({
-    mutationFn: () => api.createRcSession(host, name, {}),
+    mutationFn: () => api.createRcSession(host, name, { kind: rcKind }),
     onSuccess: (s) => {
       toast.success(`Session ${s.slug} created`);
       qc.invalidateQueries({ queryKey: ['rc', host, name] });
@@ -200,6 +204,12 @@ export default function ShedDetailPage() {
                 New
               </Button>
             </div>
+
+            {running && (
+              <div className="mb-3">
+                <RcKindPicker value={rcKind} onChange={setRcKind} disabled={newRcM.isPending} />
+              </div>
+            )}
 
             {!running ? (
               <EmptyState

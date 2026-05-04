@@ -1,4 +1,4 @@
-import type { RcSession, RcState } from '@shed-remote-agent/shared';
+import type { RcKind, RcSession, RcState } from '@shed-remote-agent/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Copy, ExternalLink, Loader2, Terminal as TerminalIcon, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -7,6 +7,12 @@ import { toast } from 'sonner';
 import { type APIError, api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { Button, Card } from './ui';
+
+const kindInfo: Record<RcKind, { label: string; tone: string }> = {
+  agent: { label: 'agent', tone: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
+  repl: { label: 'repl', tone: 'bg-violet-500/15 text-violet-700 dark:text-violet-400' },
+  shell: { label: 'shell', tone: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-400' },
+};
 
 const stateInfo: Record<RcState, { label: string; tone: string; hint?: string }> = {
   starting: { label: 'starting', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
@@ -35,6 +41,7 @@ const stateInfo: Record<RcState, { label: string; tone: string; hint?: string }>
 export function RcCard({ s }: { s: RcSession }) {
   const qc = useQueryClient();
   const info = stateInfo[s.state];
+  const kind = kindInfo[s.kind];
 
   const killM = useMutation({
     mutationFn: () => api.killRcSession(s.host, s.shed_name, s.slug),
@@ -62,8 +69,16 @@ export function RcCard({ s }: { s: RcSession }) {
     <Card className="p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="truncate font-mono text-sm">{s.display_name}</span>
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full px-2 py-0.5 font-medium text-[10px] uppercase tracking-wide',
+                kind.tone,
+              )}
+            >
+              {kind.label}
+            </span>
             <span
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium text-xs',

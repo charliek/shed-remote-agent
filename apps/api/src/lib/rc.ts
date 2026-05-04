@@ -1,4 +1,10 @@
-import type { Host, RcSession, RcState } from '@shed-remote-agent/shared';
+import {
+  DEFAULT_RC_KIND,
+  type Host,
+  type RcKind,
+  type RcSession,
+  type RcState,
+} from '@shed-remote-agent/shared';
 import { AppError } from './errors.js';
 import { shellQuote } from './shell.js';
 import { classifySSHError, run, type SSHTarget } from './ssh.js';
@@ -7,6 +13,7 @@ export const RC_PREFIX = 'rc-';
 export const DEFAULT_WORKDIR = '/workspace';
 const PANE_SEP = '---RC-PANE---';
 const NAME_SEP = '---RC-NAME---';
+const KIND_SEP = '---RC-KIND---';
 
 function target(host: Host, shedName: string): SSHTarget {
   return { host: host.host, user: shedName, port: host.sshPort };
@@ -36,16 +43,42 @@ function tmuxArgEscape(s: string): string {
   return s.replace(/[\\$"' \t]/g, '\\$&');
 }
 
+/**
+ * Builds the inner command the tmux session runs. Three shapes:
+ *   agent  – the today's broker, hosts up to 32 cloud-driven sessions.
+ *   repl   – an interactive `claude` REPL with `/rc` enabled on top, so the
+ *            live conversation is what attachers see.
+ *   shell  – a plain login bash; used for ad-hoc terminal access.
+ */
+export function buildInnerCommand(kind: RcKind, displayName: string): string {
+  switch (kind) {
+    case 'agent':
+      return `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
+    case 'repl':
+      return `claude --name ${shellQuote(displayName)} /rc`;
+    case 'shell':
+      return 'bash -l';
+  }
+}
+
 export async function bootstrap(opts: {
   host: Host;
   shed: string;
   slug?: string;
   displayName?: string;
   workdir?: string;
-}): Promise<{ slug: string; tmuxSession: string; displayName: string; workdir: string }> {
+  kind?: RcKind;
+}): Promise<{
+  slug: string;
+  tmuxSession: string;
+  displayName: string;
+  workdir: string;
+  kind: RcKind;
+}> {
   const slug = opts.slug ?? genSlug();
   const displayName = opts.displayName ?? `${opts.shed}/${slug}`;
   const workdir = opts.workdir ?? DEFAULT_WORKDIR;
+  const kind = opts.kind ?? DEFAULT_RC_KIND;
   const name = tmuxName(slug);
 
   // Run tmux directly as the ssh command instead of wrapping in `bash -c`.
@@ -55,7 +88,7 @@ export async function bootstrap(opts: {
   // the tmux server to be reaped on logout). Direct invocation lets sshd
   // hand off straight to tmux, which forks its server into its own
   // process group and returns immediately under -d.
-  const inner = `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
+  const inner = buildInnerCommand(kind, displayName);
   const result = await run(
     target(opts.host, opts.shed),
     [
@@ -68,6 +101,8 @@ export async function bootstrap(opts: {
       workdir,
       '-e',
       `SRA_DISPLAY_NAME=${tmuxArgEscape(displayName)}`,
+      '-e',
+      `SRA_KIND=${kind}`,
       inner,
     ],
     { timeoutMs: 10_000 },
@@ -85,7 +120,7 @@ export async function bootstrap(opts: {
     throw new AppError('BOOTSTRAP_FAILED', combined || `ssh exited ${result.code}`, 500);
   }
 
-  return { slug, tmuxSession: name, displayName, workdir };
+  return { slug, tmuxSession: name, displayName, workdir, kind };
 }
 
 export async function kill(opts: { host: Host; shed: string; slug: string }): Promise<void> {
@@ -116,6 +151,7 @@ export async function probe(opts: {
   host: Host;
   shed: string;
   slug: string;
+  kind: RcKind;
 }): Promise<{ state: RcState; url?: string }> {
   const name = tmuxName(opts.slug);
   // Run tmux directly without a `bash -c` wrapper. On shed images where the
@@ -135,21 +171,56 @@ export async function probe(opts: {
     if (cls === 'ok' || cls === 'command-failed') return { state: 'dead' };
     throw new AppError('SSH_ERROR', `ssh ${cls}: ${result.stderr.trim()}`, 502);
   }
-  return classifyPane(result.stdout);
+  return classifyPane(opts.kind, result.stdout);
 }
 
-export function classifyPane(pane: string): { state: RcState; url?: string } {
-  const urlMatch = pane.match(/https?:\/\/claude\.ai\/code\?environment=(env_[A-Za-z0-9_-]+)/);
-  const url = urlMatch?.[0];
-
-  if (/Workspace not trusted/i.test(pane)) return { state: 'needs-trust', url };
-  if (/requires a claude\.ai subscription|not logged in|claude auth login/i.test(pane)) {
-    return { state: 'needs-auth', url };
+function extractUrl(kind: RcKind, pane: string): string | undefined {
+  if (kind === 'agent') {
+    return pane.match(/https?:\/\/claude\.ai\/code\?environment=env_[A-Za-z0-9_-]+/)?.[0];
   }
-  if (/\bReconnecting\b/.test(pane)) return { state: 'reconnecting', url };
-  if (/\bConnected\b/.test(pane) && url) return { state: 'ready', url };
-  if (url) return { state: 'ready', url };
+  if (kind === 'repl') {
+    return pane.match(/https?:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+/)?.[0];
+  }
+  return undefined;
+}
+
+export function classifyPane(kind: RcKind, pane: string): { state: RcState; url?: string } {
+  // Trust + auth heuristics apply to both kinds that run claude (the strings
+  // come from claude itself, not from `claude remote-control` specifically).
+  if (kind !== 'shell') {
+    if (/Workspace not trusted/i.test(pane)) {
+      return { state: 'needs-trust', url: extractUrl(kind, pane) };
+    }
+    if (/requires a claude\.ai subscription|not logged in|claude auth login/i.test(pane)) {
+      return { state: 'needs-auth', url: extractUrl(kind, pane) };
+    }
+  }
+
+  if (kind === 'agent') {
+    const url = extractUrl('agent', pane);
+    if (/\bReconnecting\b/.test(pane)) return { state: 'reconnecting', url };
+    if (/\bConnected\b/.test(pane) && url) return { state: 'ready', url };
+    if (url) return { state: 'ready', url };
+    return { state: 'starting' };
+  }
+
+  if (kind === 'repl') {
+    const url = extractUrl('repl', pane);
+    if (/Remote Control connecting/i.test(pane) && !url) return { state: 'starting' };
+    if (/Remote Control active/i.test(pane) && url) return { state: 'ready', url };
+    if (url) return { state: 'ready', url };
+    return { state: 'starting' };
+  }
+
+  // shell
+  if (pane.trim().length > 0) return { state: 'ready' };
   return { state: 'starting' };
+}
+
+function parseKind(raw: string): RcKind {
+  if (raw === 'agent' || raw === 'repl' || raw === 'shell') return raw;
+  // Pre-feature sessions never set SRA_KIND; default to today's behavior.
+  return 'agent';
 }
 
 /**
@@ -162,6 +233,7 @@ names=$(tmux ls -F '#{session_name}' 2>/dev/null | grep '^${RC_PREFIX}' || true)
 for n in $names; do
   echo "${PANE_SEP}${PANE_SEP} $n"
   echo "${NAME_SEP}$(tmux show-environment -t "$n" SRA_DISPLAY_NAME 2>/dev/null | sed -n 's/^SRA_DISPLAY_NAME=//p')"
+  echo "${KIND_SEP}$(tmux show-environment -t "$n" SRA_KIND 2>/dev/null | sed -n 's/^SRA_KIND=//p')"
   tmux capture-pane -t "$n" -p -S -200 2>/dev/null || true
 done
 `;
@@ -187,14 +259,19 @@ done
     const slug = tmuxSession.slice(RC_PREFIX.length);
 
     let storedName = '';
+    let kind: RcKind = 'agent';
     let paneStart = 1;
     if (lines[1]?.startsWith(NAME_SEP)) {
       storedName = lines[1].slice(NAME_SEP.length).trim();
       paneStart = 2;
     }
+    if (lines[paneStart]?.startsWith(KIND_SEP)) {
+      kind = parseKind(lines[paneStart].slice(KIND_SEP.length).trim());
+      paneStart += 1;
+    }
 
     const pane = lines.slice(paneStart).join('\n');
-    const { state, url } = classifyPane(pane);
+    const { state, url } = classifyPane(kind, pane);
     return {
       slug,
       tmux_session: tmuxSession,
@@ -202,6 +279,7 @@ done
       host: opts.host.name,
       display_name: storedName || `${opts.shed}/${slug}`,
       workdir: DEFAULT_WORKDIR,
+      kind,
       state,
       url,
     };
@@ -212,12 +290,13 @@ export async function probeUntilReady(opts: {
   host: Host;
   shed: string;
   slug: string;
+  kind: RcKind;
   timeoutMs?: number;
 }): Promise<{ state: RcState; url?: string }> {
   const deadline = Date.now() + (opts.timeoutMs ?? 20_000);
   let last: { state: RcState; url?: string } = { state: 'starting' };
   while (Date.now() < deadline) {
-    last = await probe({ host: opts.host, shed: opts.shed, slug: opts.slug });
+    last = await probe({ host: opts.host, shed: opts.shed, slug: opts.slug, kind: opts.kind });
     if (last.state !== 'starting') return last;
     await new Promise((r) => setTimeout(r, 750));
   }

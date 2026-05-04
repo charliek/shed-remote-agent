@@ -1,9 +1,15 @@
-import type { CreateShedRequest, ProgressEvent } from '@shed-remote-agent/shared';
+import {
+  type CreateShedRequest,
+  DEFAULT_RC_KIND,
+  type ProgressEvent,
+  type RcKind,
+} from '@shed-remote-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, Loader2, Terminal, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LocalDirPicker } from '@/components/LocalDirPicker';
+import { RcKindPicker } from '@/components/RcKindPicker';
 import { RepoPicker } from '@/components/RepoPicker';
 import { Button, Card, PageShell } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -36,6 +42,7 @@ export default function NewShedPage() {
 
   const [startRc, setStartRc] = useState(true);
   const [rcDisplayName, setRcDisplayName] = useState('');
+  const [rcKind, setRcKind] = useState<RcKind>(DEFAULT_RC_KIND);
 
   const [progress, setProgress] = useState<ProgressLine[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -80,11 +87,10 @@ export default function NewShedPage() {
           if (startRc) {
             try {
               const trimmed = rcDisplayName.trim();
-              await api.createRcSession(
-                effectiveHost,
-                shedName,
-                trimmed ? { display_name: trimmed } : {},
-              );
+              await api.createRcSession(effectiveHost, shedName, {
+                kind: rcKind,
+                ...(trimmed ? { display_name: trimmed } : {}),
+              });
             } catch (rcErr) {
               // Shed is up; rc bootstrap failed. Keep the user on this page so
               // they see the error, and leave a link to the detail page.
@@ -205,19 +211,24 @@ export default function NewShedPage() {
             </div>
           </label>
           {startRc && (
-            <Field
-              label="RC name"
-              hint="shown in the Claude remote-control UI; defaults to shed/slug"
-            >
-              <input
-                type="text"
-                value={rcDisplayName}
-                onChange={(e) => setRcDisplayName(e.target.value)}
-                placeholder={`${name.trim() || 'shed-name'}/<slug>`}
-                maxLength={100}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </Field>
+            <>
+              <Field label="Kind" hint="what the tmux session runs">
+                <RcKindPicker value={rcKind} onChange={setRcKind} />
+              </Field>
+              <Field
+                label="RC name"
+                hint="shown in the Claude remote-control UI; defaults to shed/slug"
+              >
+                <input
+                  type="text"
+                  value={rcDisplayName}
+                  onChange={(e) => setRcDisplayName(e.target.value)}
+                  placeholder={`${name.trim() || 'shed-name'}/<slug>`}
+                  maxLength={100}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </Field>
+            </>
           )}
         </div>
 
