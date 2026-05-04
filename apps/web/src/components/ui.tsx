@@ -1,3 +1,4 @@
+import { Slot } from '@radix-ui/react-slot';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
@@ -5,9 +6,17 @@ export function Button({
   variant = 'default',
   className,
   children,
+  asChild,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'default' | 'secondary' | 'destructive' | 'ghost';
+  /**
+   * When true, render the styles onto the single child element instead of
+   * an inner <button>. Lets you write `<Button asChild><Link>...</Link></Button>`
+   * without nesting a <button> inside an <a> (which is invalid HTML and
+   * breaks accessibility).
+   */
+  asChild?: boolean;
 }) {
   const base =
     'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-9 px-4';
@@ -17,6 +26,13 @@ export function Button({
     destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
     ghost: 'hover:bg-accent hover:text-accent-foreground',
   } as const;
+  if (asChild) {
+    return (
+      <Slot className={cn(base, variants[variant], className)} {...props}>
+        {children}
+      </Slot>
+    );
+  }
   return (
     <button type="button" className={cn(base, variants[variant], className)} {...props}>
       {children}

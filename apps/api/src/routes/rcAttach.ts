@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from 'bun';
 import { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
+import { config } from '../config.js';
 import { clientForName } from '../lib/hostClients.js';
 import { logger } from '../lib/logger.js';
 import { type AttachHandle, openAttach, parseControlMessage } from '../lib/rcAttach.js';
@@ -18,7 +19,28 @@ function parseDim(value: string | undefined, fallback: number): number {
   return n;
 }
 
+function isOriginAllowed(origin: string | undefined): boolean {
+  // The rcAttach upgrade route is mounted before the global CORS middleware
+  // (honojs/hono#4090: CORS mutates response headers immutable post-upgrade).
+  // Browser WebSockets are NOT subject to same-origin policy, so without an
+  // explicit Origin allowlist a malicious page on the same browser could open
+  // a CSWSH connection to this orchestrator. Mirror the existing CORS_ORIGINS
+  // setting so dev/prod don't have to configure it twice.
+  if (!origin) return true; // non-browser clients (curl, scripts) have no Origin
+  if (config.corsOrigins.includes('*')) return true;
+  return config.corsOrigins.includes(origin);
+}
+
 const rcAttach = new Hono();
+
+rcAttach.use('/:host/:name/rc/:slug/attach', async (c, next) => {
+  const origin = c.req.header('origin');
+  if (!isOriginAllowed(origin)) {
+    logger.warn({ origin, allowed: config.corsOrigins }, 'rc-attach rejected: origin not allowed');
+    return c.text('forbidden origin', 403);
+  }
+  await next();
+});
 
 rcAttach.get(
   '/:host/:name/rc/:slug/attach',
@@ -58,39 +80,54 @@ rcAttach.get(
 
         log.info({ cols, rows }, 'rc-attach opened');
 
-        attach = openAttach({
-          host: resolvedHost,
-          shed: name,
-          slug,
-          cols,
-          rows,
-          onData(bytes) {
-            bytesOut += bytes.byteLength;
-            try {
-              ws.send(bytes);
-            } catch (err) {
-              log.warn({ err: String(err) }, 'rc-attach ws.send failed; closing attach');
-              attach?.close();
-              attach = null;
-            }
-          },
-          onExit(code) {
-            log.info(
-              { code, bytesIn, bytesOut, durationMs: Date.now() - openedAt },
-              'rc-attach ssh exited',
-            );
-            try {
-              ws.send(JSON.stringify({ type: 'exit', code }));
-            } catch {
-              // ignore
-            }
-            try {
-              ws.close(1000, 'attach-exited');
-            } catch {
-              // ignore
-            }
-          },
-        });
+        try {
+          attach = openAttach({
+            host: resolvedHost,
+            shed: name,
+            slug,
+            cols,
+            rows,
+            onData(bytes) {
+              bytesOut += bytes.byteLength;
+              try {
+                ws.send(bytes);
+              } catch (err) {
+                log.warn({ err: String(err) }, 'rc-attach ws.send failed; closing attach');
+                attach?.close();
+                attach = null;
+              }
+            },
+            onExit(code) {
+              log.info(
+                { code, bytesIn, bytesOut, durationMs: Date.now() - openedAt },
+                'rc-attach ssh exited',
+              );
+              try {
+                ws.send(JSON.stringify({ type: 'exit', code }));
+              } catch {
+                // ignore
+              }
+              try {
+                ws.close(1000, 'attach-exited');
+              } catch {
+                // ignore
+              }
+            },
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'failed to open terminal attach';
+          log.error({ err: String(err) }, 'rc-attach failed to open');
+          try {
+            ws.send(JSON.stringify({ type: 'error', message }));
+          } catch {
+            // ignore
+          }
+          try {
+            ws.close(1011, 'attach-open-failed');
+          } catch {
+            // ignore
+          }
+        }
       },
 
       onMessage(evt, _ws) {

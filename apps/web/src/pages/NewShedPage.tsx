@@ -203,10 +203,9 @@ export default function NewShedPage() {
               className="h-4 w-4 accent-primary"
             />
             <div className="flex-1 text-sm">
-              <div className="font-medium">Start remote-control on create</div>
+              <div className="font-medium">Start a session on create</div>
               <div className="text-muted-foreground text-xs">
-                Launches <code className="font-mono">claude remote-control</code> in /workspace as
-                soon as the shed is up.
+                Bootstraps the chosen kind in /workspace as soon as the shed is up.
               </div>
             </div>
           </label>
@@ -216,8 +215,12 @@ export default function NewShedPage() {
                 <RcKindPicker value={rcKind} onChange={setRcKind} />
               </Field>
               <Field
-                label="RC name"
-                hint="shown in the Claude remote-control UI; defaults to shed/slug"
+                label="Display name"
+                hint={
+                  rcKind === 'shell'
+                    ? 'label for this session; the bash shell ignores it'
+                    : 'shown in the Claude session UI; defaults to shed/slug'
+                }
               >
                 <input
                   type="text"

@@ -110,12 +110,12 @@ export function RcCard({ s }: { s: RcSession }) {
       <div className="mt-3 flex flex-wrap gap-2">
         {s.url && (
           <>
-            <a href={s.url} target="_blank" rel="noreferrer" className="contents">
-              <Button>
+            <Button asChild>
+              <a href={s.url} target="_blank" rel="noreferrer">
                 <ExternalLink className="h-4 w-4" />
                 Open
-              </Button>
-            </a>
+              </a>
+            </Button>
             <Button variant="secondary" onClick={copyUrl}>
               <Copy className="h-4 w-4" />
               {copied ? 'Copied' : 'Copy URL'}
@@ -123,17 +123,16 @@ export function RcCard({ s }: { s: RcSession }) {
           </>
         )}
         {s.state !== 'dead' && (
-          <Link
-            to={`/sheds/${encodeURIComponent(s.host)}/${encodeURIComponent(
-              s.shed_name,
-            )}/rc/${encodeURIComponent(s.slug)}/attach`}
-            className="contents"
-          >
-            <Button variant="secondary">
+          <Button asChild variant="secondary">
+            <Link
+              to={`/sheds/${encodeURIComponent(s.host)}/${encodeURIComponent(
+                s.shed_name,
+              )}/rc/${encodeURIComponent(s.slug)}/attach`}
+            >
               <TerminalIcon className="h-4 w-4" />
               Terminal
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
         <Button
           variant="ghost"

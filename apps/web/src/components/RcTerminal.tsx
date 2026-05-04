@@ -8,6 +8,29 @@ const RECONNECT_KEY = 'reconnect';
 
 type ConnState = 'connecting' | 'connected' | 'disconnected';
 
+type ServerControl = { type: 'error'; message?: string } | { type: 'exit'; code?: number | null };
+
+function parseServerControl(text: string): ServerControl | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const o = parsed as Record<string, unknown>;
+  if (o.type === 'error') {
+    return { type: 'error', message: typeof o.message === 'string' ? o.message : undefined };
+  }
+  if (o.type === 'exit') {
+    return {
+      type: 'exit',
+      code: typeof o.code === 'number' ? o.code : o.code === null ? null : undefined,
+    };
+  }
+  return null;
+}
+
 export interface RcTerminalProps {
   host: string;
   name: string;
@@ -34,6 +57,7 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
   const resizeTimerRef = useRef<number | null>(null);
   const [state, setState] = useState<ConnState>('connecting');
   const [reconnectKey, setReconnectKey] = useState(0);
+  const [reason, setReason] = useState<string | null>(null);
 
   const sendResize = useCallback(() => {
     const term = termRef.current;
@@ -97,6 +121,7 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
     wsRef.current = ws;
 
     setState('connecting');
+    setReason(null);
 
     // React.StrictMode runs effects twice in dev; the first run's cleanup fires
     // ws.close() on a still-CONNECTING socket, and the asynchronous close/error
@@ -117,8 +142,16 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
       if (stale) return;
       const data = evt.data;
       if (typeof data === 'string') {
-        // biome-ignore lint/suspicious/noConsole: diagnostic for in-development feature
-        console.info('[rc-attach] control frame', data);
+        const ctrl = parseServerControl(data);
+        if (ctrl?.type === 'error') {
+          setReason(ctrl.message ?? 'attach error');
+        } else if (ctrl?.type === 'exit') {
+          setReason(
+            ctrl.code === null || ctrl.code === undefined
+              ? 'attach exited'
+              : `attach exited (code ${ctrl.code})`,
+          );
+        }
         return;
       }
       if (data instanceof ArrayBuffer) {
@@ -190,7 +223,7 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
               <span>Connecting…</span>
             ) : (
               <span className="flex items-center gap-2">
-                <span>Disconnected</span>
+                <span>{reason ?? 'Disconnected'}</span>
                 <button
                   type="button"
                   className="rounded bg-zinc-700 px-2 py-0.5 hover:bg-zinc-600"
