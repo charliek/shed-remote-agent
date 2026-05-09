@@ -8,6 +8,7 @@ export const DEFAULT_WORKDIR = '/workspace';
 const PANE_SEP = '---RC-PANE---';
 const NAME_SEP = '---RC-NAME---';
 const KIND_SEP = '---RC-KIND---';
+const WORKDIR_SEP = '---RC-WORKDIR---';
 
 // Alphabet chosen to avoid visually-confusable characters so short slugs
 // survive a human reading a QR or typed URL.
@@ -121,6 +122,8 @@ export async function bootstrap(opts: BootstrapOptions): Promise<{
       `SRA_DISPLAY_NAME=${tmuxArgEscape(displayName)}`,
       '-e',
       `SRA_KIND=${kind}`,
+      '-e',
+      `SRA_WORKDIR=${tmuxArgEscape(workdir)}`,
       inner,
     ],
     { timeoutMs: 10_000 },
@@ -250,7 +253,10 @@ export interface RawRcSession {
   slug: string;
   tmux_session: string;
   display_name: string;
-  /** Workdir is not recoverable from tmux; callers fill in their default. */
+  /** The workdir captured at bootstrap (via SRA_WORKDIR env var). Undefined
+   * for pre-feature sessions that don't have the env var set; callers
+   * should fall back to their default in that case. */
+  workdir?: string;
   kind: RcKind;
   state: RcState;
   url?: string;
@@ -275,6 +281,7 @@ for n in $names; do
   echo "${PANE_SEP}${PANE_SEP} $n"
   echo "${NAME_SEP}$(tmux show-environment -t "$n" SRA_DISPLAY_NAME 2>/dev/null | sed -n 's/^SRA_DISPLAY_NAME=//p')"
   echo "${KIND_SEP}$(tmux show-environment -t "$n" SRA_KIND 2>/dev/null | sed -n 's/^SRA_KIND=//p')"
+  echo "${WORKDIR_SEP}$(tmux show-environment -t "$n" SRA_WORKDIR 2>/dev/null | sed -n 's/^SRA_WORKDIR=//p')"
   tmux capture-pane -t "$n" -p -S -200 2>/dev/null || true
 done
 `;
@@ -301,13 +308,18 @@ done
 
     let storedName = '';
     let kind: RcKind = 'agent';
+    let storedWorkdir = '';
     let paneStart = 1;
-    if (lines[1]?.startsWith(NAME_SEP)) {
-      storedName = lines[1].slice(NAME_SEP.length).trim();
-      paneStart = 2;
+    if (lines[paneStart]?.startsWith(NAME_SEP)) {
+      storedName = lines[paneStart].slice(NAME_SEP.length).trim();
+      paneStart += 1;
     }
     if (lines[paneStart]?.startsWith(KIND_SEP)) {
       kind = parseKind(lines[paneStart].slice(KIND_SEP.length).trim());
+      paneStart += 1;
+    }
+    if (lines[paneStart]?.startsWith(WORKDIR_SEP)) {
+      storedWorkdir = lines[paneStart].slice(WORKDIR_SEP.length).trim();
       paneStart += 1;
     }
 
@@ -317,6 +329,7 @@ done
       slug,
       tmux_session: tmuxSession,
       display_name: storedName || opts.displayNameFallback?.(slug) || slug,
+      workdir: storedWorkdir || undefined,
       kind,
       state,
       url,

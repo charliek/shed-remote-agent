@@ -30,7 +30,9 @@ machineRc.get('/:machine/rc', async (c) => {
     slug: r.slug,
     tmux_session: r.tmux_session,
     display_name: r.display_name,
-    workdir: defaultWorkdir(m),
+    // Prefer the workdir we stored at bootstrap; fall back to the
+    // machine default for sessions created before SRA_WORKDIR was added.
+    workdir: r.workdir ?? defaultWorkdir(m),
     kind: r.kind,
     state: r.state,
     url: r.url,

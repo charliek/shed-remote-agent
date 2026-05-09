@@ -39,11 +39,15 @@ export default function MachineDetailPage() {
   const [displayName, setDisplayName] = useState('');
   const [workdir, setWorkdir] = useState('');
 
-  // Default workdir to the configured machine.workdir once it loads, so
-  // `shell` kind keeps working without forcing the user to pick a subfolder.
+  // Default workdir to the configured machine.workdir whenever the route
+  // changes machines (the page component instance is re-used by react-router
+  // when only the :machine param changes, so without resetting we'd carry
+  // the previous machine's workdir over). m?.name is in deps to detect the
+  // machine switch even when two machines share the same workdir.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above
   useEffect(() => {
-    if (m?.workdir && !workdir) setWorkdir(m.workdir);
-  }, [m, workdir]);
+    if (m?.workdir) setWorkdir(m.workdir);
+  }, [m?.name, m?.workdir]);
 
   const newRcM = useMutation({
     mutationFn: () =>
@@ -59,6 +63,27 @@ export default function MachineDetailPage() {
     },
     onError: (e: APIError) => toast.error(`${e.code}: ${e.message}`),
   });
+
+  if (machines.error) {
+    return (
+      <PageShell title={machine}>
+        <Card className="border-destructive p-4">
+          <div className="font-medium text-destructive">Failed to load machines</div>
+          <div className="mt-1 text-muted-foreground text-sm">
+            {(machines.error as Error).message}
+          </div>
+          <div className="mt-4">
+            <Link to="/">
+              <Button variant="secondary">
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      </PageShell>
+    );
+  }
 
   if (!machines.isLoading && !m) {
     return (

@@ -3,7 +3,21 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  // Look up env files relative to this config (not the cwd of whoever
+  // invoked `vite`) and only load VITE_-prefixed vars to match Vite's
+  // client-side env semantics.
+  const env = loadEnv(mode, __dirname, 'VITE_');
+
+  // VITE_HOST: 'true' → bind to all interfaces (server.host = true);
+  // 'false' (or unset) → loopback only; anything else is treated as a
+  // literal hostname/IP to bind to.
+  const hostValue =
+    env.VITE_HOST === 'true'
+      ? true
+      : env.VITE_HOST === 'false' || !env.VITE_HOST
+        ? false
+        : env.VITE_HOST;
+
   return {
     plugins: [react()],
     resolve: {
@@ -13,7 +27,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      host: env.VITE_HOST === 'true' ? true : env.VITE_HOST || false,
+      host: hostValue,
       allowedHosts: [
         'sra.local.stridelabs.ai',
         ...(env.VITE_EXTRA_ALLOWED_HOSTS?.split(',')

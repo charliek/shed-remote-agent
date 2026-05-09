@@ -45,6 +45,7 @@ export function TerminalKeys({ onSend, ctrlArmed, onToggleCtrl }: TerminalKeysPr
       <button
         type="button"
         aria-pressed={ctrlArmed}
+        onMouseDown={(e) => e.preventDefault()}
         onClick={onToggleCtrl}
         className={`shrink-0 rounded px-2.5 py-1.5 font-mono text-xs transition-colors ${
           ctrlArmed ? 'bg-amber-500 text-zinc-900' : 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700'

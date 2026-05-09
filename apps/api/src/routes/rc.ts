@@ -38,7 +38,9 @@ rc.get('/:host/:name/rc', async (c) => {
     slug: r.slug,
     tmux_session: r.tmux_session,
     display_name: r.display_name,
-    workdir: DEFAULT_WORKDIR,
+    // Prefer the workdir we stored at bootstrap; fall back to the shed
+    // default for sessions created before SRA_WORKDIR was added.
+    workdir: r.workdir ?? DEFAULT_WORKDIR,
     kind: r.kind,
     state: r.state,
     url: r.url,

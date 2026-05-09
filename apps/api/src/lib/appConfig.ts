@@ -13,7 +13,13 @@ const machineEntrySchema = z.object({
   host: z.string().min(1),
   user: z.string().min(1),
   ssh_port: z.number().int().positive().max(65535).optional(),
-  workdir: z.string().optional(),
+  // Empty/whitespace-only is meaningless and would smuggle past the
+  // bootstrap's `?? '~'` fallback as a real argument to `tmux -c`, so
+  // reject it at parse time.
+  workdir: z
+    .string()
+    .refine((v) => v.trim().length > 0, { message: 'workdir cannot be empty or whitespace' })
+    .optional(),
 });
 
 export const appConfigSchema = z.object({
