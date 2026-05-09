@@ -8,17 +8,24 @@ import { api } from '@/lib/api';
 
 export default function ShedsPage() {
   const [filter, setFilter] = useState('');
-  const { data, isLoading, error } = useQuery({
+  const sheds = useQuery({
     queryKey: ['sheds'],
     queryFn: () => api.listSheds(),
     refetchInterval: 10_000,
   });
+  const data = sheds.data;
 
   const machines = useQuery({
     queryKey: ['machines'],
     queryFn: () => api.listMachines(),
     refetchInterval: 10_000,
   });
+
+  // Show the page-level loading spinner / error / empty-state only when
+  // both queries agree, so a slow `machines` fetch doesn't flash the empty
+  // state and an error in either source isn't silently swallowed.
+  const pageIsLoading = sheds.isLoading || machines.isLoading;
+  const pageError = (sheds.error ?? machines.error) as Error | null;
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -88,14 +95,14 @@ export default function ShedsPage() {
         </Card>
       ) : null}
 
-      {isLoading && <div className="text-muted-foreground text-sm">Loading…</div>}
-      {error && (
+      {pageIsLoading && <div className="text-muted-foreground text-sm">Loading…</div>}
+      {pageError && (
         <Card className="border-destructive p-4">
-          <div className="font-medium text-destructive">Failed to load sheds</div>
-          <div className="mt-1 text-muted-foreground text-sm">{(error as Error).message}</div>
+          <div className="font-medium text-destructive">Failed to load</div>
+          <div className="mt-1 text-muted-foreground text-sm">{pageError.message}</div>
         </Card>
       )}
-      {!isLoading && !error && filtered.length === 0 && filteredMachines.length === 0 && (
+      {!pageIsLoading && !pageError && filtered.length === 0 && filteredMachines.length === 0 && (
         <EmptyState
           title={filter ? 'No sheds or machines match your filter' : 'No sheds yet'}
           description={filter ? 'Try a different search term.' : 'Create one to get started.'}
