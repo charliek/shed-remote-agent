@@ -104,7 +104,7 @@ export default function ShedsPage() {
       )}
       {!pageIsLoading && !pageError && filtered.length === 0 && filteredMachines.length === 0 && (
         <EmptyState
-          title={filter ? 'No sheds or machines match your filter' : 'No sheds yet'}
+          title={filter ? 'No sheds or machines match your filter' : 'No sheds or machines yet'}
           description={filter ? 'Try a different search term.' : 'Create one to get started.'}
           action={
             filter ? null : (
