@@ -1,4 +1,9 @@
-import { createRcRequestSchema, DEFAULT_RC_KIND, type RcSession } from '@shed-remote-agent/shared';
+import {
+  createRcRequestSchema,
+  DEFAULT_RC_KIND,
+  type Host,
+  type RcSession,
+} from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
 import { clientFor, clientForName } from '../lib/hostClients.js';
 import {
@@ -10,13 +15,35 @@ import {
   RC_PREFIX,
 } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
+import type { SSHTarget } from '../lib/ssh.js';
 
 const rc = new Hono();
+
+function shedSshTarget(host: Host, shed: string): SSHTarget {
+  return { host: host.host, user: shed, port: host.sshPort };
+}
+
+function shedDisplayFallback(shed: string): (slug: string) => string {
+  return (slug) => `${shed}/${slug}`;
+}
 
 rc.get('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
   const { host: h } = await clientForName(host);
-  const sessions = await listRcSessions({ host: h, shed: name });
+  const raw = await listRcSessions({
+    ssh: shedSshTarget(h, name),
+    displayNameFallback: shedDisplayFallback(name),
+  });
+  const sessions: RcSession[] = raw.map((r) => ({
+    slug: r.slug,
+    tmux_session: r.tmux_session,
+    display_name: r.display_name,
+    workdir: DEFAULT_WORKDIR,
+    kind: r.kind,
+    state: r.state,
+    url: r.url,
+    target: { kind: 'shed', shed_name: name, host: host },
+  }));
   return c.json({ rc_sessions: sessions });
 });
 
@@ -30,27 +57,27 @@ rc.post('/:host/:name/rc', async (c) => {
   // SSH round-trip that would surface as a generic 500.
   await clientFor(h).getShed(name);
 
+  const ssh = shedSshTarget(h, name);
   const { slug, tmuxSession, displayName, workdir } = await bootstrap({
-    host: h,
-    shed: name,
+    ssh,
     slug: body.slug,
     displayName: body.display_name,
+    displayNameFallback: shedDisplayFallback(name),
     workdir: body.workdir,
     kind,
   });
 
-  const state = await probeUntilReady({ host: h, shed: name, slug, kind });
+  const state = await probeUntilReady({ ssh, slug, kind });
 
   const session: RcSession = {
     slug,
     tmux_session: tmuxSession,
-    shed_name: name,
-    host,
     display_name: displayName,
     workdir,
     kind,
     state: state.state,
     url: state.url,
+    target: { kind: 'shed', shed_name: name, host: host },
   };
   return c.json(session, 201);
 });
@@ -58,7 +85,7 @@ rc.post('/:host/:name/rc', async (c) => {
 rc.delete('/:host/:name/rc/:slug', async (c) => {
   const { host, name, slug } = c.req.param();
   const { host: h } = await clientForName(host);
-  await kill({ host: h, shed: name, slug });
+  await kill({ ssh: shedSshTarget(h, name), slug });
   return c.body(null, 204);
 });
 

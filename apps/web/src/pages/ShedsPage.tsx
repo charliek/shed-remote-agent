@@ -1,4 +1,4 @@
-import type { ShedWithHost } from '@shed-remote-agent/shared';
+import type { Machine, ShedWithHost } from '@shed-remote-agent/shared';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -11,6 +11,12 @@ export default function ShedsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['sheds'],
     queryFn: () => api.listSheds(),
+    refetchInterval: 10_000,
+  });
+
+  const machines = useQuery({
+    queryKey: ['machines'],
+    queryFn: () => api.listMachines(),
     refetchInterval: 10_000,
   });
 
@@ -27,6 +33,19 @@ export default function ShedsPage() {
         s.local_dir?.toLowerCase().includes(q),
     );
   }, [data, filter]);
+
+  const filteredMachines = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    const list = machines.data?.machines ?? [];
+    if (!q) return list;
+    return list.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.host.toLowerCase().includes(q) ||
+        m.user.toLowerCase().includes(q) ||
+        m.workdir?.toLowerCase().includes(q),
+    );
+  }, [machines.data, filter]);
 
   return (
     <PageShell
@@ -98,7 +117,49 @@ export default function ShedsPage() {
           <ShedRow key={`${s.host}/${s.name}`} shed={s} />
         ))}
       </div>
+
+      {filteredMachines.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+            Machines
+          </h2>
+          <div className="space-y-2">
+            {filteredMachines.map((m) => (
+              <MachineRow key={m.name} machine={m} />
+            ))}
+          </div>
+        </section>
+      )}
     </PageShell>
+  );
+}
+
+function MachineRow({ machine }: { machine: Machine }) {
+  return (
+    <Link to={`/machines/${encodeURIComponent(machine.name)}`} className="block">
+      <Card className="p-4 transition-colors hover:border-primary/50 hover:bg-accent/20">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate font-semibold">{machine.name}</h3>
+              <Badge variant="outline">machine</Badge>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+              <span className="font-mono">
+                {machine.user}@{machine.host}
+                {machine.sshPort !== 22 ? `:${machine.sshPort}` : ''}
+              </span>
+            </div>
+            {machine.workdir && (
+              <div className="mt-2 truncate text-xs">
+                <span className="text-muted-foreground">workdir:</span>{' '}
+                <span className="font-mono">{machine.workdir}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    </Link>
   );
 }
 

@@ -1,10 +1,19 @@
 import { readFile } from 'node:fs/promises';
+import type { Machine } from '@shed-remote-agent/shared';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
 const localDirSchema = z.object({
   user: z.string(),
   path: z.string(),
+});
+
+const machineEntrySchema = z.object({
+  name: z.string().min(1),
+  host: z.string().min(1),
+  user: z.string().min(1),
+  ssh_port: z.number().int().positive().max(65535).optional(),
+  workdir: z.string().optional(),
 });
 
 export const appConfigSchema = z.object({
@@ -29,6 +38,7 @@ export const appConfigSchema = z.object({
     )
     .optional()
     .default({}),
+  machines: z.array(machineEntrySchema).optional().default([]),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
@@ -55,4 +65,14 @@ export function resolveLocalDir(
   hostName: string,
 ): { user: string; path: string } | null {
   return cfg.hosts?.[hostName]?.local_dir ?? cfg.defaults?.local_dir ?? null;
+}
+
+export function machinesFromConfig(cfg: AppConfig): Machine[] {
+  return (cfg.machines ?? []).map((m) => ({
+    name: m.name,
+    host: m.host,
+    user: m.user,
+    sshPort: m.ssh_port ?? 22,
+    workdir: m.workdir,
+  }));
 }

@@ -1,10 +1,4 @@
-import {
-  DEFAULT_RC_KIND,
-  type Host,
-  type RcKind,
-  type RcSession,
-  type RcState,
-} from '@shed-remote-agent/shared';
+import { DEFAULT_RC_KIND, type RcKind, type RcState } from '@shed-remote-agent/shared';
 import { AppError } from './errors.js';
 import { shellQuote } from './shell.js';
 import { classifySSHError, run, type SSHTarget } from './ssh.js';
@@ -14,10 +8,6 @@ export const DEFAULT_WORKDIR = '/workspace';
 const PANE_SEP = '---RC-PANE---';
 const NAME_SEP = '---RC-NAME---';
 const KIND_SEP = '---RC-KIND---';
-
-function target(host: Host, shedName: string): SSHTarget {
-  return { host: host.host, user: shedName, port: host.sshPort };
-}
 
 // Alphabet chosen to avoid visually-confusable characters so short slugs
 // survive a human reading a QR or typed URL.
@@ -49,26 +39,52 @@ function tmuxArgEscape(s: string): string {
  *   repl   – an interactive `claude` REPL with `/rc` enabled on top, so the
  *            live conversation is what attachers see.
  *   shell  – a plain login bash; used for ad-hoc terminal access.
+ *
+ * When `interactiveShell` is true, repl/agent are wrapped in `bash -ic` so
+ * the user's ~/.bashrc runs and PATH-mutating tools like nvm/asdf/pnpm are
+ * picked up before claude is exec'd. Needed on native machines where claude
+ * lives under e.g. ~/.nvm/.../bin/claude rather than /usr/local/bin.
  */
-export function buildInnerCommand(kind: RcKind, displayName: string): string {
-  switch (kind) {
-    case 'agent':
-      return `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
-    case 'repl':
-      return `claude --name ${shellQuote(displayName)} /rc`;
-    case 'shell':
-      return 'bash -l';
+export function buildInnerCommand(
+  kind: RcKind,
+  displayName: string,
+  opts?: { interactiveShell?: boolean },
+): string {
+  const cmd = (() => {
+    switch (kind) {
+      case 'agent':
+        return `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
+      case 'repl':
+        return `claude --name ${shellQuote(displayName)} /rc`;
+      case 'shell':
+        return 'bash -l';
+    }
+  })();
+  if (opts?.interactiveShell && kind !== 'shell') {
+    return `bash -ic ${shellQuote(cmd)}`;
   }
+  return cmd;
 }
 
-export async function bootstrap(opts: {
-  host: Host;
-  shed: string;
-  slug?: string;
+export interface BootstrapOptions {
+  ssh: SSHTarget;
+  /** Display name for the tmux session and `--name` flag. Defaults to slug. */
   displayName?: string;
+  /** Optional fallback used when displayName is not provided; receives the
+   * generated/passed slug so the caller can build e.g. `<shed>/<slug>`. */
+  displayNameFallback?: (slug: string) => string;
+  /** Working directory inside the tmux session. */
   workdir?: string;
+  slug?: string;
   kind?: RcKind;
-}): Promise<{
+  /** Wrap repl/agent commands with `bash -ic` so the user's ~/.bashrc runs
+   * and PATH-mutating tools (nvm/asdf/pnpm) are picked up. Default false —
+   * sheds bake claude into a system path so they don't need it. Set true
+   * for native machines. */
+  interactiveShell?: boolean;
+}
+
+export async function bootstrap(opts: BootstrapOptions): Promise<{
   slug: string;
   tmuxSession: string;
   displayName: string;
@@ -76,7 +92,7 @@ export async function bootstrap(opts: {
   kind: RcKind;
 }> {
   const slug = opts.slug ?? genSlug();
-  const displayName = opts.displayName ?? `${opts.shed}/${slug}`;
+  const displayName = opts.displayName ?? opts.displayNameFallback?.(slug) ?? slug;
   const workdir = opts.workdir ?? DEFAULT_WORKDIR;
   const kind = opts.kind ?? DEFAULT_RC_KIND;
   const name = tmuxName(slug);
@@ -88,9 +104,11 @@ export async function bootstrap(opts: {
   // the tmux server to be reaped on logout). Direct invocation lets sshd
   // hand off straight to tmux, which forks its server into its own
   // process group and returns immediately under -d.
-  const inner = buildInnerCommand(kind, displayName);
+  const inner = buildInnerCommand(kind, displayName, {
+    interactiveShell: opts.interactiveShell,
+  });
   const result = await run(
-    target(opts.host, opts.shed),
+    opts.ssh,
     [
       'tmux',
       'new-session',
@@ -123,9 +141,9 @@ export async function bootstrap(opts: {
   return { slug, tmuxSession: name, displayName, workdir, kind };
 }
 
-export async function kill(opts: { host: Host; shed: string; slug: string }): Promise<void> {
+export async function kill(opts: { ssh: SSHTarget; slug: string }): Promise<void> {
   const name = tmuxName(opts.slug);
-  const result = await run(target(opts.host, opts.shed), ['tmux', 'kill-session', '-t', name], {
+  const result = await run(opts.ssh, ['tmux', 'kill-session', '-t', name], {
     timeoutMs: 5_000,
   });
   if (result.code === 0) return;
@@ -148,8 +166,7 @@ export async function kill(opts: { host: Host; shed: string; slug: string }): Pr
 }
 
 export async function probe(opts: {
-  host: Host;
-  shed: string;
+  ssh: SSHTarget;
   slug: string;
   kind: RcKind;
 }): Promise<{ state: RcState; url?: string }> {
@@ -160,11 +177,9 @@ export async function probe(opts: {
   // sshd execs it directly. capture-pane already returns non-zero if the
   // session doesn't exist, so the previous has-session preflight is
   // redundant.
-  const result = await run(
-    target(opts.host, opts.shed),
-    ['tmux', 'capture-pane', '-t', name, '-p', '-S', '-200'],
-    { timeoutMs: 5_000 },
-  );
+  const result = await run(opts.ssh, ['tmux', 'capture-pane', '-t', name, '-p', '-S', '-200'], {
+    timeoutMs: 5_000,
+  });
 
   if (result.code !== 0) {
     const cls = classifySSHError(result.stderr, result.code);
@@ -189,6 +204,14 @@ export function classifyPane(kind: RcKind, pane: string): { state: RcState; url?
   // come from claude itself, not from `claude remote-control` specifically).
   if (kind !== 'shell') {
     if (/Workspace not trusted/i.test(pane)) {
+      return { state: 'needs-trust', url: extractUrl(kind, pane) };
+    }
+    // First-time trust prompt: claude shows an interactive
+    // "Quick safety check: Is this a project you created or one you trust?"
+    // prompt the first time it enters a workspace. The session stays alive
+    // (waiting on input) so the URL pattern never appears — surface it as
+    // needs-trust so the UI nudges the user instead of spinning forever.
+    if (/Quick safety check/i.test(pane) || /Yes,\s*I trust this folder/i.test(pane)) {
       return { state: 'needs-trust', url: extractUrl(kind, pane) };
     }
     if (/requires a claude\.ai subscription|not logged in|claude auth login/i.test(pane)) {
@@ -223,11 +246,29 @@ function parseKind(raw: string): RcKind {
   return 'agent';
 }
 
+export interface RawRcSession {
+  slug: string;
+  tmux_session: string;
+  display_name: string;
+  /** Workdir is not recoverable from tmux; callers fill in their default. */
+  kind: RcKind;
+  state: RcState;
+  url?: string;
+}
+
 /**
  * Single-SSH list-and-probe: fetches all tmux session names and their panes
  * in one remote shell invocation so we don't pay N+1 SSH handshakes.
+ *
+ * Returns target-agnostic data; callers wrap with shed/machine identifiers
+ * and a workdir default.
  */
-export async function listRcSessions(opts: { host: Host; shed: string }): Promise<RcSession[]> {
+export async function listRcSessions(opts: {
+  ssh: SSHTarget;
+  /** Used when a tmux session has no SRA_DISPLAY_NAME stored (e.g. created
+   * before the env var was added). Receives the slug. */
+  displayNameFallback?: (slug: string) => string;
+}): Promise<RawRcSession[]> {
   const script = `
 names=$(tmux ls -F '#{session_name}' 2>/dev/null | grep '^${RC_PREFIX}' || true)
 for n in $names; do
@@ -241,7 +282,7 @@ done
   // the user has no controlling terminal, tmux invoked as a child of `bash
   // -c` fails with "open terminal failed: not a terminal", but works when
   // bash reads commands from stdin (the parent process layout differs).
-  const result = await run(target(opts.host, opts.shed), ['bash'], {
+  const result = await run(opts.ssh, ['bash'], {
     stdin: script,
     timeoutMs: 8_000,
   });
@@ -253,7 +294,7 @@ done
   }
 
   const sections = result.stdout.split(`${PANE_SEP}${PANE_SEP} `).slice(1);
-  return sections.map<RcSession>((section) => {
+  return sections.map<RawRcSession>((section) => {
     const lines = section.split('\n');
     const tmuxSession = (lines[0] ?? '').trim();
     const slug = tmuxSession.slice(RC_PREFIX.length);
@@ -275,10 +316,7 @@ done
     return {
       slug,
       tmux_session: tmuxSession,
-      shed_name: opts.shed,
-      host: opts.host.name,
-      display_name: storedName || `${opts.shed}/${slug}`,
-      workdir: DEFAULT_WORKDIR,
+      display_name: storedName || opts.displayNameFallback?.(slug) || slug,
       kind,
       state,
       url,
@@ -287,8 +325,7 @@ done
 }
 
 export async function probeUntilReady(opts: {
-  host: Host;
-  shed: string;
+  ssh: SSHTarget;
   slug: string;
   kind: RcKind;
   timeoutMs?: number;
@@ -296,7 +333,7 @@ export async function probeUntilReady(opts: {
   const deadline = Date.now() + (opts.timeoutMs ?? 20_000);
   let last: { state: RcState; url?: string } = { state: 'starting' };
   while (Date.now() < deadline) {
-    last = await probe({ host: opts.host, shed: opts.shed, slug: opts.slug, kind: opts.kind });
+    last = await probe({ ssh: opts.ssh, slug: opts.slug, kind: opts.kind });
     if (last.state !== 'starting') return last;
     await new Promise((r) => setTimeout(r, 750));
   }

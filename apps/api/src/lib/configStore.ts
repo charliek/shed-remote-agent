@@ -1,6 +1,6 @@
-import type { Host } from '@shed-remote-agent/shared';
+import type { Host, Machine } from '@shed-remote-agent/shared';
 import { config } from '../config.js';
-import { type AppConfig, loadAppConfig } from './appConfig.js';
+import { type AppConfig, loadAppConfig, machinesFromConfig } from './appConfig.js';
 import { ttlMemoize } from './cache.js';
 import { hostsFromConfig, loadShedConfig, type ShedClientConfig } from './shedConfig.js';
 
@@ -22,4 +22,13 @@ export async function getHosts(): Promise<Host[]> {
 export async function getHost(name: string): Promise<Host | null> {
   const hosts = await getHosts();
   return hosts.find((h) => h.name === name) ?? null;
+}
+
+export async function getMachines(): Promise<Machine[]> {
+  return machinesFromConfig(await getAppConfig());
+}
+
+export async function getMachine(name: string): Promise<Machine | null> {
+  const machines = await getMachines();
+  return machines.find((m) => m.name === name) ?? null;
 }

@@ -20,3 +20,14 @@ github:
 #     local_dir:
 #       user: charliek
 #       path: /Users/charliek/projects
+
+# Native machines (non-shed) reachable via SSH that you also want to
+# bootstrap `claude remote-control` sessions on. Same RC UX as sheds, but
+# the SSH target is a regular user@host instead of <shedname>@shed-host.
+# Each machine needs `tmux` and (for repl/agent kinds) `claude` installed.
+# machines:
+#   - name: pop-os
+#     host: pop-os               # tailnet hostname or IP
+#     user: charliek
+#     ssh_port: 22               # optional, default 22
+#     workdir: /home/charliek/projects   # default cwd for new RC sessions; default ~

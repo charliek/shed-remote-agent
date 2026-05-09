@@ -44,14 +44,28 @@ export function RcCard({ s }: { s: RcSession }) {
   const kind = kindInfo[s.kind];
 
   const killM = useMutation({
-    mutationFn: () => api.killRcSession(s.host, s.shed_name, s.slug),
+    mutationFn: () => {
+      if (s.target.kind === 'machine') {
+        return api.killMachineRcSession(s.target.machine_name, s.slug);
+      }
+      return api.killRcSession(s.target.host, s.target.shed_name, s.slug);
+    },
     onSuccess: () => {
       toast.success('Session killed');
-      qc.invalidateQueries({ queryKey: ['rc', s.host, s.shed_name] });
-      qc.invalidateQueries({ queryKey: ['sessions', s.host, s.shed_name] });
+      if (s.target.kind === 'machine') {
+        qc.invalidateQueries({ queryKey: ['machineRc', s.target.machine_name] });
+      } else {
+        qc.invalidateQueries({ queryKey: ['rc', s.target.host, s.target.shed_name] });
+        qc.invalidateQueries({ queryKey: ['sessions', s.target.host, s.target.shed_name] });
+      }
     },
     onError: (e: APIError) => toast.error(e.message),
   });
+
+  const terminalHref =
+    s.target.kind === 'machine'
+      ? `/machines/${encodeURIComponent(s.target.machine_name)}/rc/${encodeURIComponent(s.slug)}/attach`
+      : `/sheds/${encodeURIComponent(s.target.host)}/${encodeURIComponent(s.target.shed_name)}/rc/${encodeURIComponent(s.slug)}/attach`;
 
   const [copied, setCopied] = useState(false);
   const copyUrl = async () => {
@@ -124,11 +138,7 @@ export function RcCard({ s }: { s: RcSession }) {
         )}
         {s.state !== 'dead' && (
           <Button asChild variant="secondary">
-            <Link
-              to={`/sheds/${encodeURIComponent(s.host)}/${encodeURIComponent(
-                s.shed_name,
-              )}/rc/${encodeURIComponent(s.slug)}/attach`}
-            >
+            <Link to={terminalHref}>
               <TerminalIcon className="h-4 w-4" />
               Terminal
             </Link>

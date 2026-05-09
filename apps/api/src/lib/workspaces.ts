@@ -1,11 +1,8 @@
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { Host } from '@shed-remote-agent/shared';
-import { resolveLocalDir } from './appConfig.js';
-import { getAppConfig } from './configStore.js';
 import { AppError } from './errors.js';
 import { shellQuote } from './shell.js';
-import { classifySSHError, run } from './ssh.js';
+import { classifySSHError, run, type SSHTarget } from './ssh.js';
 
 export interface Workspace {
   name: string;
@@ -19,21 +16,27 @@ export interface WorkspacesResult {
   workspaces: Workspace[];
 }
 
+export interface WorkspacesTarget {
+  /** SSH target for the listing. `null` runs the listing locally on the
+   * orchestrator (the existing local-shortcut for loopback shed-hosts). */
+  ssh: SSHTarget | null;
+  /** Absolute path on the target whose direct children should be listed. */
+  root: string;
+  /** Display field on the response — usually the SSH user. */
+  user: string;
+}
+
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
-export async function listWorkspaces(host: Host): Promise<WorkspacesResult> {
-  const appCfg = await getAppConfig();
-  const local = resolveLocalDir(appCfg, host.name);
-  if (!local) {
-    throw AppError.badRequest(
-      `no local_dir configured for host '${host.name}' (set defaults.local_dir or hosts.${host.name}.local_dir)`,
-    );
-  }
+export function isLocalHost(host: string): boolean {
+  return LOCAL_HOSTNAMES.has(host);
+}
 
-  if (LOCAL_HOSTNAMES.has(host.host)) {
-    return listLocal(local.path, local.user);
+export async function listWorkspaces(t: WorkspacesTarget): Promise<WorkspacesResult> {
+  if (!t.ssh) {
+    return listLocal(t.root, t.user);
   }
-  return listRemote(host.host, local.user, local.path);
+  return listRemote(t.ssh, t.root, t.user);
 }
 
 async function listLocal(root: string, user: string): Promise<WorkspacesResult> {
@@ -70,9 +73,11 @@ async function listLocal(root: string, user: string): Promise<WorkspacesResult> 
   return { root, user, workspaces };
 }
 
-async function listRemote(host: string, user: string, root: string): Promise<WorkspacesResult> {
-  const target = { host, user, port: 22 };
-
+async function listRemote(
+  target: SSHTarget,
+  root: string,
+  user: string,
+): Promise<WorkspacesResult> {
   // One-shot: list top-level dirs and probe .git in a single remote command.
   // `set -e` + no `|| exit 0` so a missing/unreadable root surfaces as a
   // failure (matching listLocal's WORKSPACE_READ_FAILED behavior).

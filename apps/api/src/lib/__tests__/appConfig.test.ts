@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseAppConfig, resolveLocalDir } from '../appConfig.js';
+import { machinesFromConfig, parseAppConfig, resolveLocalDir } from '../appConfig.js';
 
 describe('parseAppConfig', () => {
   it('applies empty defaults when file is empty', () => {
@@ -40,5 +40,34 @@ hosts:
   it('returns null when neither defaults nor host override set', () => {
     const cfg = parseAppConfig('');
     expect(resolveLocalDir(cfg, 'any')).toBeNull();
+  });
+});
+
+describe('machinesFromConfig', () => {
+  it('returns empty when config has no machines', () => {
+    expect(machinesFromConfig(parseAppConfig(''))).toEqual([]);
+  });
+
+  it('defaults ssh_port to 22 and passes through workdir', () => {
+    const cfg = parseAppConfig(`machines:
+  - name: pop-os
+    host: pop-os
+    user: charliek
+    workdir: /home/charliek/projects
+  - name: explicit-port
+    host: 10.0.0.5
+    user: ops
+    ssh_port: 2200
+`);
+    expect(machinesFromConfig(cfg)).toEqual([
+      {
+        name: 'pop-os',
+        host: 'pop-os',
+        user: 'charliek',
+        sshPort: 22,
+        workdir: '/home/charliek/projects',
+      },
+      { name: 'explicit-port', host: '10.0.0.5', user: 'ops', sshPort: 2200, workdir: undefined },
+    ]);
   });
 });
