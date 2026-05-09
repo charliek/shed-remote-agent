@@ -3,6 +3,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# envsecrets
+apps/api/.env
+
 .env
 .env.local
 .env.*.local
