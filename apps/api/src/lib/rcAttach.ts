@@ -1,6 +1,6 @@
-import type { Host } from '@shed-remote-agent/shared';
 import { RC_PREFIX } from './rc.js';
 import { shellQuote } from './shell.js';
+import type { SSHTarget } from './ssh.js';
 
 export interface ResizeMessage {
   type: 'resize';
@@ -30,8 +30,7 @@ export function parseControlMessage(text: string): ResizeMessage | null {
 }
 
 export interface OpenAttachOptions {
-  host: Host;
-  shed: string;
+  ssh: SSHTarget;
   slug: string;
   cols: number;
   rows: number;
@@ -65,8 +64,8 @@ export function openAttach(opts: OpenAttachOptions): AttachHandle {
   const args = [
     ...SSH_BASE_FLAGS,
     '-p',
-    String(opts.host.sshPort),
-    `${opts.shed}@${opts.host.host}`,
+    String(opts.ssh.port),
+    `${opts.ssh.user}@${opts.ssh.host}`,
     '--',
     remoteCmd,
   ];

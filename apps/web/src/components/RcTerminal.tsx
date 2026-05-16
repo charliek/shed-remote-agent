@@ -2,6 +2,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { TerminalKeys } from './TerminalKeys';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const RECONNECT_KEY = 'reconnect';
@@ -31,25 +32,30 @@ function parseServerControl(text: string): ServerControl | null {
   return null;
 }
 
+export type RcTerminalTarget =
+  | { kind: 'shed'; host: string; name: string }
+  | { kind: 'machine'; machine: string };
+
 export interface RcTerminalProps {
-  host: string;
-  name: string;
+  target: RcTerminalTarget;
   slug: string;
 }
 
-function buildAttachUrl(host: string, name: string, slug: string, cols: number, rows: number) {
+function buildAttachUrl(target: RcTerminalTarget, slug: string, cols: number, rows: number) {
   // VITE_API_URL is normally a relative '/api' path, in which case we resolve
   // against the current origin and switch http(s) → ws(s). When configured to
   // an absolute URL (e.g. for a separate domain) the same logic still holds.
   const params = new URLSearchParams({ cols: String(cols), rows: String(rows) });
-  const path = `${API_BASE_URL}/sheds/${encodeURIComponent(host)}/${encodeURIComponent(
-    name,
-  )}/rc/${encodeURIComponent(slug)}/attach?${params.toString()}`;
+  const subpath =
+    target.kind === 'machine'
+      ? `/machines/${encodeURIComponent(target.machine)}/rc/${encodeURIComponent(slug)}/attach`
+      : `/sheds/${encodeURIComponent(target.host)}/${encodeURIComponent(target.name)}/rc/${encodeURIComponent(slug)}/attach`;
+  const path = `${API_BASE_URL}${subpath}?${params.toString()}`;
   const base = path.startsWith('http') ? path : new URL(path, window.location.href).toString();
   return base.replace(/^http/, 'ws');
 }
 
-export function RcTerminal({ host, name, slug }: RcTerminalProps) {
+export function RcTerminal({ target, slug }: RcTerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -58,6 +64,26 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
   const [state, setState] = useState<ConnState>('connecting');
   const [reconnectKey, setReconnectKey] = useState(0);
   const [reason, setReason] = useState<string | null>(null);
+
+  // Sticky-CTRL armed by the on-screen helper toolbar. The xterm onData
+  // listener consults the ref (always-fresh inside the closure); the state
+  // is the visual mirror so the chip can render its armed style.
+  const [ctrlArmed, setCtrlArmed] = useState(false);
+  const ctrlArmedRef = useRef(false);
+  const setCtrl = useCallback((next: boolean) => {
+    ctrlArmedRef.current = next;
+    setCtrlArmed(next);
+  }, []);
+  const toggleCtrl = useCallback(() => {
+    setCtrl(!ctrlArmedRef.current);
+  }, [setCtrl]);
+
+  const sendInput = useCallback((bytes: string) => {
+    // Route through xterm's input API so it goes through the same onData
+    // listener that ships bytes to the WebSocket — keeps one code path.
+    termRef.current?.input(bytes);
+    termRef.current?.focus();
+  }, []);
 
   const sendResize = useCallback(() => {
     const term = termRef.current;
@@ -116,7 +142,7 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
     termRef.current = term;
     fitRef.current = fit;
 
-    const ws = new WebSocket(buildAttachUrl(host, name, slug, term.cols, term.rows));
+    const ws = new WebSocket(buildAttachUrl(target, slug, term.cols, term.rows));
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
@@ -179,7 +205,18 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
     const encoder = new TextEncoder();
     const inputDisp = term.onData((d) => {
       if (stale || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(encoder.encode(d));
+      let bytes = d;
+      if (ctrlArmedRef.current && d.length === 1) {
+        const c = d.charCodeAt(0);
+        // ASCII range that meaningfully ctrl-codes: @, A-Z, [, \, ], ^, _,
+        // `, a-z, {, |, }, ~ — i.e. 0x40..0x7e. `c & 0x1f` produces the
+        // standard control code (a → \x01, c → \x03, etc.).
+        if (c >= 0x40 && c <= 0x7e) {
+          bytes = String.fromCharCode(c & 0x1f);
+          setCtrl(false);
+        }
+      }
+      ws.send(encoder.encode(bytes));
     });
 
     const observer = new ResizeObserver(() => fitAndMaybeResize());
@@ -211,11 +248,12 @@ export function RcTerminal({ host, name, slug }: RcTerminalProps) {
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [host, name, slug, reconnectKey, sendResize, fitAndMaybeResize]);
+  }, [target, slug, reconnectKey, sendResize, fitAndMaybeResize, setCtrl]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col bg-[#0b0d12]">
       <div ref={containerRef} className="min-h-0 flex-1 [&_.xterm]:h-full [&_.xterm]:p-2" />
+      <TerminalKeys onSend={sendInput} ctrlArmed={ctrlArmed} onToggleCtrl={toggleCtrl} />
       {state !== 'connected' && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3">
           <div className="pointer-events-auto rounded-md bg-zinc-800/90 px-3 py-2 text-xs text-zinc-100 shadow">

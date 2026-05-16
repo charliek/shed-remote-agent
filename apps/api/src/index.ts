@@ -1,7 +1,7 @@
 import app from './app.js';
 import { config } from './config.js';
 import { logger } from './lib/logger.js';
-import { websocket } from './routes/rcAttach.js';
+import { websocket } from './lib/wsServer.js';
 
 const server = Bun.serve({
   port: config.port,

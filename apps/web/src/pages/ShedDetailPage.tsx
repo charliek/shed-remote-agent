@@ -9,6 +9,9 @@ import { RcKindPicker } from '@/components/RcKindPicker';
 import { TmuxSessionCard } from '@/components/TmuxSessionCard';
 import { Badge, Button, Card, EmptyState, PageShell, StatusPill } from '@/components/ui';
 import { type APIError, api } from '@/lib/api';
+import { toastForRcCreate } from '@/lib/rcCreateToast';
+
+const SHED_ALLOWED_KINDS: RcKind[] = ['repl', 'shell'];
 
 export default function ShedDetailPage() {
   const { host = '', name = '' } = useParams();
@@ -71,11 +74,19 @@ export default function ShedDetailPage() {
     },
     onError: (e: APIError) => toast.error(e.message),
   });
-  const [rcKind, setRcKind] = useState<RcKind>(DEFAULT_RC_KIND);
+  const [rcKind, setRcKind] = useState<RcKind>(
+    SHED_ALLOWED_KINDS.includes(DEFAULT_RC_KIND) ? DEFAULT_RC_KIND : SHED_ALLOWED_KINDS[0],
+  );
+  const [displayName, setDisplayName] = useState('');
   const newRcM = useMutation({
-    mutationFn: () => api.createRcSession(host, name, { kind: rcKind }),
+    mutationFn: () =>
+      api.createRcSession(host, name, {
+        kind: rcKind,
+        display_name: displayName.trim() || undefined,
+      }),
     onSuccess: (s) => {
-      toast.success(`Session ${s.slug} created`);
+      toastForRcCreate(s);
+      setDisplayName('');
       qc.invalidateQueries({ queryKey: ['rc', host, name] });
       qc.invalidateQueries({ queryKey: ['sessions', host, name] });
     },
@@ -192,25 +203,11 @@ export default function ShedDetailPage() {
           </Card>
 
           <section className="mt-6">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3">
               <h2 className="font-semibold text-sm uppercase tracking-wide">
                 Remote-control sessions
               </h2>
-              <Button disabled={!running || newRcM.isPending} onClick={() => newRcM.mutate()}>
-                {newRcM.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="h-4 w-4" />
-                )}
-                New
-              </Button>
             </div>
-
-            {running && (
-              <div className="mb-3">
-                <RcKindPicker value={rcKind} onChange={setRcKind} disabled={newRcM.isPending} />
-              </div>
-            )}
 
             {!running ? (
               <EmptyState
@@ -235,10 +232,60 @@ export default function ShedDetailPage() {
             ) : (
               <EmptyState
                 title="No remote-control sessions"
-                description='Click "New" to bootstrap one.'
+                description="Create one below to get started."
               />
             )}
           </section>
+
+          {running && (
+            <section className="mt-6">
+              <div className="mb-3">
+                <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+                  New session
+                </h2>
+              </div>
+              <Card className="space-y-3 p-3">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="rc-display-name"
+                    className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+                  >
+                    Session name
+                  </label>
+                  <input
+                    id="rc-display-name"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder={`${name}/<slug>`}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    disabled={newRcM.isPending}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="block font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                    Kind
+                  </span>
+                  <RcKindPicker
+                    value={rcKind}
+                    onChange={setRcKind}
+                    disabled={newRcM.isPending}
+                    allowedKinds={SHED_ALLOWED_KINDS}
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button disabled={newRcM.isPending} onClick={() => newRcM.mutate()}>
+                    {newRcM.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    Create
+                  </Button>
+                </div>
+              </Card>
+            </section>
+          )}
 
           {(() => {
             // Anything not in the curated rc list above — orphans, manually

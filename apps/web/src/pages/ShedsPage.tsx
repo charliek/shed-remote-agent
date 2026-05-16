@@ -1,4 +1,4 @@
-import type { ShedWithHost } from '@shed-remote-agent/shared';
+import type { Machine, ShedWithHost } from '@shed-remote-agent/shared';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -8,11 +8,24 @@ import { api } from '@/lib/api';
 
 export default function ShedsPage() {
   const [filter, setFilter] = useState('');
-  const { data, isLoading, error } = useQuery({
+  const sheds = useQuery({
     queryKey: ['sheds'],
     queryFn: () => api.listSheds(),
     refetchInterval: 10_000,
   });
+  const data = sheds.data;
+
+  const machines = useQuery({
+    queryKey: ['machines'],
+    queryFn: () => api.listMachines(),
+    refetchInterval: 10_000,
+  });
+
+  // Show the page-level loading spinner / error / empty-state only when
+  // both queries agree, so a slow `machines` fetch doesn't flash the empty
+  // state and an error in either source isn't silently swallowed.
+  const pageIsLoading = sheds.isLoading || machines.isLoading;
+  const pageError = (sheds.error ?? machines.error) as Error | null;
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -27,6 +40,19 @@ export default function ShedsPage() {
         s.local_dir?.toLowerCase().includes(q),
     );
   }, [data, filter]);
+
+  const filteredMachines = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    const list = machines.data?.machines ?? [];
+    if (!q) return list;
+    return list.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.host.toLowerCase().includes(q) ||
+        m.user.toLowerCase().includes(q) ||
+        m.workdir?.toLowerCase().includes(q),
+    );
+  }, [machines.data, filter]);
 
   return (
     <PageShell
@@ -69,16 +95,16 @@ export default function ShedsPage() {
         </Card>
       ) : null}
 
-      {isLoading && <div className="text-muted-foreground text-sm">Loading…</div>}
-      {error && (
+      {pageIsLoading && <div className="text-muted-foreground text-sm">Loading…</div>}
+      {pageError && (
         <Card className="border-destructive p-4">
-          <div className="font-medium text-destructive">Failed to load sheds</div>
-          <div className="mt-1 text-muted-foreground text-sm">{(error as Error).message}</div>
+          <div className="font-medium text-destructive">Failed to load</div>
+          <div className="mt-1 text-muted-foreground text-sm">{pageError.message}</div>
         </Card>
       )}
-      {!isLoading && !error && filtered.length === 0 && (
+      {!pageIsLoading && !pageError && filtered.length === 0 && filteredMachines.length === 0 && (
         <EmptyState
-          title={filter ? 'No sheds match your filter' : 'No sheds yet'}
+          title={filter ? 'No sheds or machines match your filter' : 'No sheds or machines yet'}
           description={filter ? 'Try a different search term.' : 'Create one to get started.'}
           action={
             filter ? null : (
@@ -98,7 +124,49 @@ export default function ShedsPage() {
           <ShedRow key={`${s.host}/${s.name}`} shed={s} />
         ))}
       </div>
+
+      {filteredMachines.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+            Machines
+          </h2>
+          <div className="space-y-2">
+            {filteredMachines.map((m) => (
+              <MachineRow key={m.name} machine={m} />
+            ))}
+          </div>
+        </section>
+      )}
     </PageShell>
+  );
+}
+
+function MachineRow({ machine }: { machine: Machine }) {
+  return (
+    <Link to={`/machines/${encodeURIComponent(machine.name)}`} className="block">
+      <Card className="p-4 transition-colors hover:border-primary/50 hover:bg-accent/20">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate font-semibold">{machine.name}</h3>
+              <Badge variant="outline">machine</Badge>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+              <span className="font-mono">
+                {machine.user}@{machine.host}
+                {machine.sshPort !== 22 ? `:${machine.sshPort}` : ''}
+              </span>
+            </div>
+            {machine.workdir && (
+              <div className="mt-2 truncate text-xs">
+                <span className="text-muted-foreground">workdir:</span>{' '}
+                <span className="font-mono">{machine.workdir}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    </Link>
   );
 }
 

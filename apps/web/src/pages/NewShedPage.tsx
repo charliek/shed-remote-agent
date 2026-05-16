@@ -191,7 +191,11 @@ export default function NewShedPage() {
 
         {source === 'repo' && <RepoPicker value={repo} onChange={setRepo} />}
         {source === 'local-dir' && effectiveHost && (
-          <LocalDirPicker host={effectiveHost} value={localDir} onChange={setLocalDir} />
+          <LocalDirPicker
+            source={{ kind: 'host', host: effectiveHost }}
+            value={localDir}
+            onChange={setLocalDir}
+          />
         )}
 
         <div className="space-y-3 rounded-md border border-border p-3">

@@ -66,6 +66,19 @@ describe('classifyPane(repl, …)', () => {
     expect(r.state).toBe('needs-trust');
   });
 
+  it('detects the first-time "Quick safety check" trust prompt', () => {
+    const pane = `Accessing workspace:
+
+ /home/charliek/projects
+
+ Quick safety check: Is this a project you created or one you trust?
+
+ ❯ 1. Yes, I trust this folder
+   2. No, exit`;
+    const r = classifyPane('repl', pane);
+    expect(r.state).toBe('needs-trust');
+  });
+
   it('returns starting on a fresh REPL with no /rc yet', () => {
     const r = classifyPane('repl', '❯ Try "fix typecheck errors"');
     expect(r.state).toBe('starting');

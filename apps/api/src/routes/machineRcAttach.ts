@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { config } from '../config.js';
-import { clientForName } from '../lib/hostClients.js';
 import { logger } from '../lib/logger.js';
+import { machineSshTarget, requireMachine } from '../lib/machineClients.js';
 import { type AttachHandle, openAttach, parseControlMessage } from '../lib/rcAttach.js';
 import { upgradeWebSocket } from '../lib/wsServer.js';
 
@@ -17,41 +17,40 @@ function parseDim(value: string | undefined, fallback: number): number {
 }
 
 function isOriginAllowed(origin: string | undefined): boolean {
-  // The rcAttach upgrade route is mounted before the global CORS middleware
-  // (honojs/hono#4090: CORS mutates response headers immutable post-upgrade).
-  // Browser WebSockets are NOT subject to same-origin policy, so without an
-  // explicit Origin allowlist a malicious page on the same browser could open
-  // a CSWSH connection to this orchestrator. Mirror the existing CORS_ORIGINS
-  // setting so dev/prod don't have to configure it twice.
-  if (!origin) return true; // non-browser clients (curl, scripts) have no Origin
+  // Mirrors the same CSWSH-defense allowlist in routes/rcAttach.ts; see the
+  // comment there for the full rationale.
+  if (!origin) return true;
   if (config.corsOrigins.includes('*')) return true;
   return config.corsOrigins.includes(origin);
 }
 
-const rcAttach = new Hono();
+const machineRcAttach = new Hono();
 
-rcAttach.use('/:host/:name/rc/:slug/attach', async (c, next) => {
+machineRcAttach.use('/:machine/rc/:slug/attach', async (c, next) => {
   const origin = c.req.header('origin');
   if (!isOriginAllowed(origin)) {
-    logger.warn({ origin, allowed: config.corsOrigins }, 'rc-attach rejected: origin not allowed');
+    logger.warn(
+      { origin, allowed: config.corsOrigins },
+      'machine-rc-attach rejected: origin not allowed',
+    );
     return c.text('forbidden origin', 403);
   }
   await next();
 });
 
-rcAttach.get(
-  '/:host/:name/rc/:slug/attach',
+machineRcAttach.get(
+  '/:machine/rc/:slug/attach',
   upgradeWebSocket(async (c) => {
-    const { host, name, slug } = c.req.param();
+    const { machine, slug } = c.req.param();
     const cols = parseDim(c.req.query('cols'), DEFAULT_COLS);
     const rows = parseDim(c.req.query('rows'), DEFAULT_ROWS);
     const traceId = crypto.randomUUID().slice(0, 8);
-    const log = logger.child({ traceId, host, name, slug });
+    const log = logger.child({ traceId, machine, slug });
 
-    let resolvedHost: Awaited<ReturnType<typeof clientForName>>['host'] | null = null;
+    let resolvedMachine: Awaited<ReturnType<typeof requireMachine>> | null = null;
     let resolveError: unknown = null;
     try {
-      resolvedHost = (await clientForName(host)).host;
+      resolvedMachine = await requireMachine(machine);
     } catch (err) {
       resolveError = err;
     }
@@ -63,23 +62,24 @@ rcAttach.get(
 
     return {
       onOpen(_evt, ws) {
-        if (!resolvedHost) {
-          const message = resolveError instanceof Error ? resolveError.message : 'host not found';
-          log.warn({ message }, 'rc-attach reject: host not resolved');
+        if (!resolvedMachine) {
+          const message =
+            resolveError instanceof Error ? resolveError.message : 'machine not found';
+          log.warn({ message }, 'machine-rc-attach reject: machine not resolved');
           try {
             ws.send(JSON.stringify({ type: 'error', message }));
           } catch {
             // ignore
           }
-          ws.close(1011, 'host-not-found');
+          ws.close(1011, 'machine-not-found');
           return;
         }
 
-        log.info({ cols, rows }, 'rc-attach opened');
+        log.info({ cols, rows }, 'machine-rc-attach opened');
 
         try {
           attach = openAttach({
-            ssh: { host: resolvedHost.host, user: name, port: resolvedHost.sshPort },
+            ssh: machineSshTarget(resolvedMachine),
             slug,
             cols,
             rows,
@@ -88,7 +88,7 @@ rcAttach.get(
               try {
                 ws.send(bytes);
               } catch (err) {
-                log.warn({ err: String(err) }, 'rc-attach ws.send failed; closing attach');
+                log.warn({ err: String(err) }, 'machine-rc-attach ws.send failed; closing attach');
                 attach?.close();
                 attach = null;
               }
@@ -96,7 +96,7 @@ rcAttach.get(
             onExit(code) {
               log.info(
                 { code, bytesIn, bytesOut, durationMs: Date.now() - openedAt },
-                'rc-attach ssh exited',
+                'machine-rc-attach ssh exited',
               );
               try {
                 ws.send(JSON.stringify({ type: 'exit', code }));
@@ -112,7 +112,7 @@ rcAttach.get(
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : 'failed to open terminal attach';
-          log.error({ err: String(err) }, 'rc-attach failed to open');
+          log.error({ err: String(err) }, 'machine-rc-attach failed to open');
           try {
             ws.send(JSON.stringify({ type: 'error', message }));
           } catch {
@@ -131,7 +131,7 @@ rcAttach.get(
         if (typeof data === 'string') {
           const msg = parseControlMessage(data);
           if (msg?.type === 'resize') {
-            log.debug({ cols: msg.cols, rows: msg.rows }, 'rc-attach resize');
+            log.debug({ cols: msg.cols, rows: msg.rows }, 'machine-rc-attach resize');
             attach?.resize(msg.cols, msg.rows);
           }
           return;
@@ -167,14 +167,14 @@ rcAttach.get(
             bytesOut,
             durationMs: Date.now() - openedAt,
           },
-          'rc-attach ws closed',
+          'machine-rc-attach ws closed',
         );
         attach?.close();
         attach = null;
       },
 
       onError(evt) {
-        log.warn({ evt: String(evt) }, 'rc-attach websocket error');
+        log.warn({ evt: String(evt) }, 'machine-rc-attach websocket error');
         attach?.close();
         attach = null;
       },
@@ -182,4 +182,4 @@ rcAttach.get(
   }),
 );
 
-export default rcAttach;
+export default machineRcAttach;

@@ -2,6 +2,7 @@ import type {
   CreateRcRequest,
   HostsResponse,
   ImagesResponse,
+  MachinesResponse,
   RcSession,
   RcSessionsResponse,
   ReposResponse,
@@ -124,4 +125,23 @@ export const api = {
       `/sheds/${encodeURIComponent(host)}/${encodeURIComponent(name)}/rc/${encodeURIComponent(slug)}`,
       { method: 'DELETE' },
     ),
+
+  listMachines: () => fetchAPI<MachinesResponse>('/machines'),
+
+  listMachineWorkspaces: (machine: string) =>
+    fetchAPI<WorkspacesResponse>(`/machines/${encodeURIComponent(machine)}/workspaces`),
+
+  listMachineRcSessions: (machine: string) =>
+    fetchAPI<RcSessionsResponse>(`/machines/${encodeURIComponent(machine)}/rc`),
+
+  createMachineRcSession: (machine: string, body: CreateRcRequest = {}) =>
+    fetchAPI<RcSession>(`/machines/${encodeURIComponent(machine)}/rc`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  killMachineRcSession: (machine: string, slug: string) =>
+    fetchAPI<void>(`/machines/${encodeURIComponent(machine)}/rc/${encodeURIComponent(slug)}`, {
+      method: 'DELETE',
+    }),
 };
