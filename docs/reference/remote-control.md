@@ -61,7 +61,7 @@ From `apps/api/src/lib/rc.ts` `classifyPane`:
 | `agent` URL | `https?:\/\/claude\.ai\/code\?environment=env_[A-Za-z0-9_-]+` | `agent` |
 | `repl` URL | `https?:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+` | `repl` |
 | `needs-trust` | `Workspace not trusted` or `Quick safety check` or `Yes,\s*I trust this folder` (case-insensitive) | `agent`, `repl` |
-| `needs-auth` | `requires a claude\.ai subscription\|not logged in\|claude auth login` (case-insensitive) | `agent`, `repl` |
+| `needs-auth` | `requires a claude\.ai subscription` or `not logged in` or `claude auth login` (case-insensitive alternation) | `agent`, `repl` |
 | `reconnecting` | `\bReconnecting\b` | `agent` |
 | `ready` (`agent`) | `\bConnected\b` + URL, or URL alone | `agent` |
 | `ready` (`repl`) | `Remote Control active` + URL, or URL alone | `repl` |
