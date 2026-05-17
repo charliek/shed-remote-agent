@@ -9,32 +9,45 @@ flowchart TB
         CAPP["Claude mobile / web app"]
     end
 
-    subgraph backend["Backend host (Tailscale)"]
+    subgraph backend["Orchestrator host (Tailscale)"]
         API["Hono API (:8787)"]
-        API_LIB["shedClient · rc · workspaces · gh"]
+        API_LIB["shedClient · rc · rcAttach · ssh (CommandTarget) · workspaces · gh"]
+        LOCAL_TMUX["tmux rc-&lt;slug&gt; (type: local machine)"]
         API --> API_LIB
+        API_LIB --> LOCAL_TMUX
     end
 
     subgraph shed_host["Shed host"]
         SS["shed-server :8080"]
         SSHD["sshd :2222"]
         subgraph VM["Shed VM"]
-            TMUX["tmux rc-&lt;slug&gt;"]
-            CLAUDE["claude remote-control"]
-            TMUX --> CLAUDE
+            STMUX["tmux rc-&lt;slug&gt;"]
+            SCLAUDE["claude remote-control"]
+            STMUX --> SCLAUDE
         end
         SS --> VM
         SSHD --> VM
     end
 
-    subgraph anthropic["Anthropic"]
-        ENV["env_... session"]
+    subgraph ssh_machine["SSH machine (tailnet box)"]
+        MSSHD["sshd"]
+        MTMUX["tmux rc-&lt;slug&gt;"]
+        MCLAUDE["claude remote-control"]
+        MTMUX --> MCLAUDE
+        MSSHD --> MTMUX
     end
 
-    UI -->|"/api"| API
+    subgraph anthropic["Anthropic"]
+        ENV["env_... / session_... URL"]
+    end
+
+    UI -->|HTTP /api| API
+    UI -->|WS attach| API
     API_LIB -->|HTTP| SS
     API_LIB -->|SSH| SSHD
-    CLAUDE -->|outbound HTTPS| ENV
+    API_LIB -->|SSH| MSSHD
+    SCLAUDE -->|outbound HTTPS| ENV
+    MCLAUDE -->|outbound HTTPS| ENV
     CAPP -.joins via URL.-> ENV
 ```
 
@@ -59,39 +72,71 @@ The backend does not buffer — each `event:` + `data:` pair is flushed to the b
 
 ### Bootstrap remote-control
 
+The same code path serves sheds, SSH machines, and local machines. The polymorphism lives in `CommandTarget`:
+
+```ts
+type CommandTarget =
+  | { kind: 'ssh'; host: string; user: string; port: number }
+  | { kind: 'local' };
+```
+
+`run(target, argv, opts)` and `openAttach({target, …})` dispatch on `kind`. For `'ssh'` they spawn the real `ssh` CLI; for `'local'` they spawn `bash -c` (and `tmux attach` for the attach path) directly. The wire command is built the same way in both branches (each token pre-quoted with `shellQuote`) so the local shell parses it byte-for-byte the way the remote shell does.
+
 ```mermaid
 sequenceDiagram
     participant UI
     participant API
-    participant SSH as shed-server SSH
-    participant VM as Shed VM
+    participant T as Target<br/>(ssh or local)
+    participant TMUX as tmux + claude
 
-    UI->>API: POST /api/sheds/:host/:name/rc
-    API->>SSH: ssh <shed>@<host>:2222 -- bash -lc '…'
-    Note right of API: tmux new-session -d -s rc-&lt;slug&gt; …
-    SSH->>VM: tmux + claude remote-control
+    UI->>API: POST /api/{sheds|machines}/.../rc
+    Note over API: target = CommandTarget<br/>(ssh: spawn ssh; local: spawn bash)
+    API->>T: tmux new-session -d -s rc-&lt;slug&gt; …
+    T->>TMUX: detached session
     loop Every 750ms (≤ 20s)
-        API->>SSH: ssh -- tmux capture-pane
-        SSH-->>API: pane text
-        API->>API: classifyPane() → state/url
+        API->>T: tmux capture-pane
+        T-->>API: pane text
+        API->>API: classifyPane(kind, pane) → state/url
     end
-    API-->>UI: { state: 'ready', url: 'https://claude.ai/code?…' }
+    API-->>UI: { kind, state, url, target, … }
 ```
 
 Classifier regex table: see [Remote Control](../reference/remote-control.md#classifier-regexes).
+
+### Browser terminal attach
+
+```mermaid
+sequenceDiagram
+    participant XT as xterm.js
+    participant WS as API WS upgrade
+    participant T as Target
+
+    XT->>WS: GET /api/.../rc/:slug/attach (Upgrade: websocket)
+    WS->>WS: origin check (CORS_ORIGINS)
+    WS->>T: spawn `tmux attach -t rc-&lt;slug&gt;` (ssh -tt or direct)
+    T-->>WS: PTY bytes
+    WS-->>XT: binary frames
+    XT->>WS: keystrokes (binary), resize (JSON)
+    WS->>T: writes to PTY / resize PTY
+    T-->>WS: process exits
+    WS-->>XT: { type: 'exit', code }
+```
 
 ## Load-bearing modules
 
 | Module | Purpose |
 |--------|---------|
 | `apps/api/src/lib/shedClient.ts` | Typed HTTP client for `shed-server` (incl. SSE create) |
-| `apps/api/src/lib/rc.ts` | Bootstrap / probe / kill / classifyPane |
-| `apps/api/src/lib/ssh.ts` | `Bun.spawn(['ssh', …])` wrapper with timeout + stderr classifier |
-| `apps/api/src/lib/shell.ts` | POSIX-safe shell quoting |
+| `apps/api/src/lib/rc.ts` | Bootstrap / probe / kill / classifyPane / listRcSessions (all polymorphic on `CommandTarget`) |
+| `apps/api/src/lib/rcAttach.ts` | WebSocket PTY bridge to `tmux attach` (SSH or local) |
+| `apps/api/src/lib/ssh.ts` | `CommandTarget` union + `run()` (Bun.spawn ssh or bash) + stderr classifier |
+| `apps/api/src/lib/machineClients.ts` | `machineCommandTarget(m)` → `CommandTarget` for the machine routes |
+| `apps/api/src/lib/shell.ts` | POSIX-safe shell quoting (shared by ssh and local wire paths) |
 | `apps/api/src/lib/cache.ts` | `ttlMemoize<K, V>` — keyed cache with in-flight dedup |
 | `apps/api/src/lib/errors.ts` | Unified `AppError` used everywhere |
 | `apps/api/src/lib/configStore.ts` | Memoized loaders for both YAML configs |
-| `apps/api/src/lib/workspaces.ts` | `ls + .git` probe in one SSH round-trip |
+| `apps/api/src/lib/appConfig.ts` | Zod schema for `~/.config/shed-remote-agent/config.yaml`, including the `machines[]` discriminated union |
+| `apps/api/src/lib/workspaces.ts` | `ls + .git` probe in one SSH round-trip; falls back to in-process `readdir` for `ssh: null` (local-host / local-machine listing) |
 | `apps/api/src/lib/gh.ts` | `gh repo list` wrapper + cache |
 | `packages/shared/src/sse.ts` | Shared SSE line parser (server + browser) |
 

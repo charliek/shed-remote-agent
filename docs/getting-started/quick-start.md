@@ -25,14 +25,15 @@ Hit **Create shed**. You'll see a progress stream — upstream `shed-server` SSE
 
 If you skipped "Start remote-control on create", open the new shed from the list. The detail page shows status + origin + the empty RC sessions panel. Tap **+ New** under *Remote-control sessions*.
 
-The backend SSHes in and launches:
+Pick a session **kind** — the default is `repl`:
 
-```bash
-tmux new-session -d -s rc-<slug> -c /workspace \
-  'claude remote-control --name "<shed>/<slug>" --spawn same-dir'
-```
+| Kind | Inner command | When to use |
+|------|---------------|-------------|
+| `agent` | `claude remote-control --name <display> --spawn same-dir` | Cloud-driven broker. The Claude app picks sessions from this pool and spawns child sessions in the current dir. |
+| `repl` | `claude --name <display> /rc` | Interactive Claude REPL with `/rc` enabled. The live conversation is what attachers see. |
+| `shell` | `bash -l` | Plain login shell. No Claude — useful for ad-hoc terminal access. |
 
-Then it polls the pane until one of the terminal states appears. Usually within 2–5 seconds you'll see **ready** + a URL like `https://claude.ai/code?environment=env_01RP...`.
+The backend SSHes in (or spawns directly for `type: local` machines) and launches the inner command inside a detached tmux session named `rc-<slug>`. It then polls the pane until one of the terminal states appears. Usually within 2–5 seconds you'll see **ready** + a URL like `https://claude.ai/code?environment=env_01RP...` (for `agent`/`repl`; `shell` goes straight to `ready` with no URL).
 
 ## 4. Join from your phone
 
@@ -40,12 +41,34 @@ Tap **Open** on the session card to launch the Claude app (or `claude.ai/code` i
 
 If you'd rather paste the URL somewhere else, tap **Copy URL**.
 
-## 5. Kill when done
+## 5. Attach in the browser
+
+Tap **Attach** on the session card to open the in-browser terminal. xterm.js streams bytes bidirectionally over a WebSocket; resize, copy/paste, and keep-alive are all handled. This is the same view you'd get from `tmux attach -t rc-<slug>` on the target, with the same persistence — close the tab and the session keeps running.
+
+## 6. Kill when done
 
 Tap **Kill** on the session card. The tmux session is destroyed, the session goes `dead`, and `claude.ai/code` will show the environment as disconnected.
 
 !!! note "Sessions survive logouts"
     `claude remote-control` is a persistent tmux-backed process, not tied to your browser. You can close the web UI, reopen it tomorrow, and the session is still alive — as long as the shed stays running.
+
+## Running RC on a native machine instead of a shed
+
+Native machines (anything that isn't a shed) live in `~/.config/shed-remote-agent/config.yaml` under `machines:`. Two flavors:
+
+```yaml
+machines:
+  - name: pop-os                # SSH variant (default)
+    host: pop-os
+    user: charliek
+    workdir: /home/charliek/projects
+
+  - name: mac-mini              # Local variant — runs on the orchestrator host itself
+    type: local
+    workdir: /Users/charliek/projects
+```
+
+After editing, machines show up on the sheds page under a **Machines** section. Tap one to open the same RC panel you get on sheds — `+ New`, kind picker, attach, kill all work the same way. The only difference is the target: SSH machines tunnel through `ssh user@host:port`; local machines spawn tmux directly on the orchestrator. See [Config Schema → Machines](../reference/config-schema.md#machines) for the full shape.
 
 ## Troubleshooting
 

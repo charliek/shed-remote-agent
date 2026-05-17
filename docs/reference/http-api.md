@@ -15,8 +15,10 @@ The HTTP status is always the same as the upstream when the error came from a `s
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/hosts` | List configured shed hosts from `~/.shed/config.yaml` |
+| GET | `/hosts/:host/images` | List image variants available on the shed host |
+| GET | `/hosts/:host/workspaces` | List local directories on the shed host (requires `local_dir` config) |
 
-Response:
+Response for `/hosts`:
 
 ```json
 {"hosts":[{"name":"localhost-dev","host":"localhost","httpPort":8080,"sshPort":2222}]}
@@ -75,22 +77,80 @@ data: {"error":{"code":"BACKEND_ERROR","message":"..."}}
 
 The parser in `packages/shared/src/sse.ts` handles `:` comment lines, multi-line `data:` concat, and trailing events without a blank line.
 
+## Machines
+
+Native (non-shed) RC targets configured in `~/.config/shed-remote-agent/config.yaml`. See [Config Schema → Machines](config-schema.md#machines) for the entry shapes.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/machines` | List configured machines (both `type: ssh` and `type: local`) |
+| GET | `/machines/:machine/workspaces` | List directories under the machine's `workdir` (requires `workdir` to be set) |
+
+Response for `/machines`:
+
+```json
+{
+  "machines": [
+    {
+      "type": "ssh",
+      "name": "pop-os",
+      "host": "pop-os",
+      "user": "charliek",
+      "sshPort": 22,
+      "workdir": "/home/charliek/projects"
+    },
+    {
+      "type": "local",
+      "name": "mac-mini",
+      "user": "charliek",
+      "workdir": "/Users/charliek/projects"
+    }
+  ]
+}
+```
+
+The `type` discriminator drives the workspaces and RC endpoints: `ssh` machines run a remote `ls` over SSH; `local` machines run the listing in-process on the orchestrator host with no SSH hop.
+
 ## Remote Control
+
+RC endpoints exist in two parallel namespaces — one rooted at sheds, one rooted at machines. Wire shape is identical; only the target differs.
+
+### Shed RC
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/sheds/:host/:name/rc` | List RC sessions in a shed (filtered tmux sessions, probed for state) |
 | POST | `/sheds/:host/:name/rc` | Bootstrap a new RC session and block until a terminal state (≤ 20 s) |
 | DELETE | `/sheds/:host/:name/rc/:slug` | Kill the underlying tmux session |
+| GET (WS) | `/sheds/:host/:name/rc/:slug/attach` | WebSocket upgrade: bidirectional terminal stream attached to `tmux -t rc-<slug>` |
 | GET | `/sheds/rc/_meta` | Debug: exposed constants (`prefix`, `default_workdir`) |
+
+### Machine RC
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/machines/:machine/rc` | List RC sessions on the machine |
+| POST | `/machines/:machine/rc` | Bootstrap a new RC session |
+| DELETE | `/machines/:machine/rc/:slug` | Kill the underlying tmux session |
+| GET (WS) | `/machines/:machine/rc/:slug/attach` | WebSocket terminal attach |
 
 ### Bootstrap body (all optional)
 
 ```json
-{"slug":"demo","display_name":"my-shed/demo","workdir":"/workspace"}
+{
+  "slug": "demo",
+  "display_name": "my-shed/demo",
+  "workdir": "/workspace",
+  "kind": "repl"
+}
 ```
 
-Defaults: `slug` auto-generated (6 confusable-free chars), `display_name` = `<shed>/<slug>`, `workdir` = `/workspace`.
+| Field | Default | Notes |
+|-------|---------|-------|
+| `slug` | auto-generated (6 confusable-free chars) | Must match `^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$` |
+| `display_name` | `<shed>/<slug>` or `<machine>/<slug>` | Stored in tmux env (`SRA_DISPLAY_NAME`) and passed as `--name` to `claude` |
+| `workdir` | `/workspace` for sheds; the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`) |
+| `kind` | `repl` | One of `agent`, `repl`, `shell`. See [Remote Control → Session kinds](remote-control.md#session-kinds). |
 
 ### Bootstrap response
 
@@ -98,23 +158,32 @@ Defaults: `slug` auto-generated (6 confusable-free chars), `display_name` = `<sh
 {
   "slug": "abc123",
   "tmux_session": "rc-abc123",
-  "shed_name": "my-shed",
-  "host": "localhost-dev",
   "display_name": "my-shed/abc123",
   "workdir": "/workspace",
+  "kind": "repl",
   "state": "ready",
-  "url": "https://claude.ai/code?environment=env_01RP..."
+  "url": "https://claude.ai/code/session_01ABC...",
+  "target": { "kind": "shed", "shed_name": "my-shed", "host": "localhost-dev" }
 }
 ```
 
+For machine targets, `target` is `{ "kind": "machine", "machine_name": "<name>" }`. `url` is only populated for `agent` and `repl` kinds once the pane reaches `ready`; `shell` sessions never produce a URL.
+
 See [Remote Control](remote-control.md) for the meaning of each state.
 
-## Hosts (secondary)
+### WebSocket attach protocol
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/hosts/:host/images` | List image variants available on the shed host |
-| GET | `/hosts/:host/workspaces` | List local directories on the shed host (requires `local_dir` config) |
+Both attach endpoints (`/sheds/.../attach` and `/machines/.../attach`) upgrade an HTTP GET to a WebSocket. The CORS allowlist (`CORS_ORIGINS`) also gates these upgrades — browsers don't honor same-origin policy on WebSockets, so an explicit origin check provides CSWSH defense.
+
+| Direction | Frame | Meaning |
+|-----------|-------|---------|
+| → server | binary | Keystrokes / raw bytes piped to the tmux PTY |
+| → server | text JSON `{"type":"resize","cols":N,"rows":N}` | Resize the PTY (`1 ≤ N ≤ 1000`) |
+| ← client | binary | Pane output from tmux |
+| ← client | text JSON `{"type":"exit","code":N}` | Underlying ssh/tmux process exited |
+| ← client | text JSON `{"type":"error","message":"..."}` | Setup error before the PTY came up |
+
+Query params `cols` and `rows` set the initial PTY size (defaults `80` × `24`, max `1000`).
 
 ## Repos
 
