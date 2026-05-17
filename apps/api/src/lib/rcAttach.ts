@@ -1,6 +1,6 @@
 import { RC_PREFIX } from './rc.js';
 import { shellQuote } from './shell.js';
-import type { SSHTarget } from './ssh.js';
+import type { CommandTarget } from './ssh.js';
 
 export interface ResizeMessage {
   type: 'resize';
@@ -30,7 +30,7 @@ export function parseControlMessage(text: string): ResizeMessage | null {
 }
 
 export interface OpenAttachOptions {
-  ssh: SSHTarget;
+  target: CommandTarget;
   slug: string;
   cols: number;
   rows: number;
@@ -60,19 +60,24 @@ const SSH_BASE_FLAGS = [
 
 export function openAttach(opts: OpenAttachOptions): AttachHandle {
   const tmuxName = `${RC_PREFIX}${opts.slug}`;
-  const remoteCmd = ['tmux', 'attach', '-t', tmuxName].map(shellQuote).join(' ');
-  const args = [
-    ...SSH_BASE_FLAGS,
-    '-p',
-    String(opts.ssh.port),
-    `${opts.ssh.user}@${opts.ssh.host}`,
-    '--',
-    remoteCmd,
-  ];
+  // For ssh we have to hand a single string to the remote shell. For local we
+  // can exec tmux directly since Bun's `terminal` option provides the PTY.
+  const spawnArgs =
+    opts.target.kind === 'ssh'
+      ? [
+          'ssh',
+          ...SSH_BASE_FLAGS,
+          '-p',
+          String(opts.target.port),
+          `${opts.target.user}@${opts.target.host}`,
+          '--',
+          ['tmux', 'attach', '-t', tmuxName].map(shellQuote).join(' '),
+        ]
+      : ['tmux', 'attach', '-t', tmuxName];
 
   let exited = false;
 
-  const proc = Bun.spawn(['ssh', ...args], {
+  const proc = Bun.spawn(spawnArgs, {
     terminal: {
       cols: opts.cols,
       rows: opts.rows,

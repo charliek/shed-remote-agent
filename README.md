@@ -10,10 +10,16 @@ Designed to live behind Tailscale — there is no auth layer.
 
 - Lists sheds from every host in `~/.shed/config.yaml`
 - Creates a new shed with a git repo (`gh`-backed picker) or a host-side local directory
-- Bootstraps `claude remote-control` in `/workspace` of any running shed by SSH-ing
-  in and launching it inside a detached tmux session named `rc-<slug>`
-- Shows the generated `https://claude.ai/code?environment=env_...` URL with
-  Copy/Open buttons
+- Treats native machines as first-class RC targets alongside sheds: SSH machines
+  (e.g. Tailscale-reachable boxes) and `type: local` machines that run tmux
+  directly on the orchestrator host with no SSH hop
+- Bootstraps `claude remote-control` (or `claude /rc`, or a plain shell) in
+  `/workspace` of any running shed (or a configured `workdir` on a machine) by
+  launching it inside a detached tmux session named `rc-<slug>`
+- Three RC kinds — `agent`, `repl`, `shell` — pickable per session
+- Attaches an in-browser xterm.js terminal to any session over a WebSocket
+- Shows the generated `https://claude.ai/code?environment=env_...` /
+  `claude.ai/code/session_...` URL with Copy/Open buttons
 - Surfaces actionable states: `starting`, `ready`, `reconnecting`, `needs-trust`,
   `needs-auth`, `dead`
 
@@ -125,6 +131,10 @@ Implemented phases:
 5. Create shed with streaming SSE progress
 6. Remote-control bootstrap, probe, kill; RC UI
 7. Polish: error states, filter inputs, mobile layout, SSE parser tests
+8. RC session kinds (`agent`/`repl`/`shell`) with per-session picker
+9. In-browser xterm.js terminal attach over WebSocket
+10. Native machines as RC targets (`machines:` config block, parallel `/api/machines/...` endpoints)
+11. `type: local` machines (no-SSH path for the orchestrator host itself)
 
 Post-MVP (explicitly not built):
 - In-browser Claude chat (Connect-API proxy to a web UI inside the shed)

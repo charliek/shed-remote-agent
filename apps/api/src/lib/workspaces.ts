@@ -88,7 +88,9 @@ ls -1 2>/dev/null | while IFS= read -r d; do if [ -d "$d" ]; then echo "$d"; fi;
 echo '---GIT---'
 for d in */; do if [ -d "$d.git" ]; then echo "\${d%/}"; fi; done`;
 
-  const result = await run(target, ['bash', '-lc', script], { timeoutMs: 10_000 });
+  const result = await run({ kind: 'ssh', ...target }, ['bash', '-lc', script], {
+    timeoutMs: 10_000,
+  });
   if (result.code !== 0) {
     // Use the exit code (not the stderr classifier) to decide transport vs
     // remote-command failure. ssh(1) uses 255 for any connection/protocol

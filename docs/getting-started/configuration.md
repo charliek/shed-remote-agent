@@ -19,7 +19,7 @@ Run `shed server add <name> ...` or edit this file with the shed CLI. See the [s
 
 ## `~/.config/shed-remote-agent/config.yaml` — agent-specific
 
-This file configures the bits that are unique to this project — the GitHub owners used for the repo picker, and the SSH user + path used to list local directories on a shed host.
+This file configures the bits that are unique to this project: the GitHub owners used for the repo picker, the SSH user + path used to list local directories on a shed host, and the optional list of native machines that can host RC sessions alongside sheds.
 
 Start from [`config.example.yaml`](https://github.com/charliek/shed-remote-agent/blob/main/config.example.yaml) in the repo.
 
@@ -53,6 +53,30 @@ Start from [`config.example.yaml`](https://github.com/charliek/shed-remote-agent
           path: /Users/charliek/projects
     ```
 
+=== "With native machines"
+
+    ```yaml
+    defaults:
+      local_dir:
+        user: charliek
+        path: /home/charliek/projects
+    github:
+      owners:
+        - charliek
+
+    machines:
+      # SSH machine (e.g. a tailnet box reachable via Tailscale SSH).
+      - name: pop-os
+        host: pop-os
+        user: charliek
+        workdir: /home/charliek/projects
+      # Local machine: runs tmux directly on the orchestrator host with
+      # no SSH hop. Useful when Tailscale SSH can't loop back to this node.
+      - name: mac-mini
+        type: local
+        workdir: /Users/charliek/projects
+    ```
+
 ### Fields
 
 | Field | Type | Purpose |
@@ -61,6 +85,7 @@ Start from [`config.example.yaml`](https://github.com/charliek/shed-remote-agent
 | `defaults.local_dir.path` | string | Absolute path on shed hosts where projects live (the local-dir picker lists this dir) |
 | `github.owners` | string[] | GitHub user/org names passed to `gh repo list` for the repo picker |
 | `hosts.<name>.local_dir` | object | Per-host override for `defaults.local_dir` (keyed by the shed-host name from `~/.shed/config.yaml`) |
+| `machines[]` | object[] | Native RC targets that are not sheds. See [Config Schema → Machines](../reference/config-schema.md#machines) for the discriminated-union shape (SSH vs local). |
 
 See [Config Schema](../reference/config-schema.md) for the full shape.
 
@@ -74,7 +99,7 @@ The backend reads a small set of env vars (all optional):
 | `HOST` | `0.0.0.0` | Bind address |
 | `NODE_ENV` | `development` | Switches log formatting (pretty vs JSON) |
 | `LOG_LEVEL` | `info` | `trace` / `debug` / `info` / `warn` / `error` / `fatal` |
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origin allowlist |
+| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origin allowlist. Gates both the HTTP CORS middleware **and** the in-browser terminal WebSocket (CSWSH defense), so if you serve the UI from anywhere other than `http://localhost:5173` you must add it here. |
 | `SHED_CONFIG_PATH` | `~/.shed/config.yaml` | Override the shed CLI config path |
 | `APP_CONFIG_PATH` | `~/.config/shed-remote-agent/config.yaml` | Override the agent config path |
 

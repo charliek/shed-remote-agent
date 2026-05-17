@@ -15,12 +15,12 @@ import {
   RC_PREFIX,
 } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
-import type { SSHTarget } from '../lib/ssh.js';
+import type { CommandTarget } from '../lib/ssh.js';
 
 const rc = new Hono();
 
-function shedSshTarget(host: Host, shed: string): SSHTarget {
-  return { host: host.host, user: shed, port: host.sshPort };
+function shedCommandTarget(host: Host, shed: string): CommandTarget {
+  return { kind: 'ssh', host: host.host, user: shed, port: host.sshPort };
 }
 
 function shedDisplayFallback(shed: string): (slug: string) => string {
@@ -31,7 +31,7 @@ rc.get('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
   const { host: h } = await clientForName(host);
   const raw = await listRcSessions({
-    ssh: shedSshTarget(h, name),
+    target: shedCommandTarget(h, name),
     displayNameFallback: shedDisplayFallback(name),
   });
   const sessions: RcSession[] = raw.map((r) => ({
@@ -59,9 +59,9 @@ rc.post('/:host/:name/rc', async (c) => {
   // SSH round-trip that would surface as a generic 500.
   await clientFor(h).getShed(name);
 
-  const ssh = shedSshTarget(h, name);
+  const target = shedCommandTarget(h, name);
   const { slug, tmuxSession, displayName, workdir } = await bootstrap({
-    ssh,
+    target,
     slug: body.slug,
     displayName: body.display_name,
     displayNameFallback: shedDisplayFallback(name),
@@ -69,7 +69,7 @@ rc.post('/:host/:name/rc', async (c) => {
     kind,
   });
 
-  const state = await probeUntilReady({ ssh, slug, kind });
+  const state = await probeUntilReady({ target, slug, kind });
 
   const session: RcSession = {
     slug,
@@ -87,7 +87,7 @@ rc.post('/:host/:name/rc', async (c) => {
 rc.delete('/:host/:name/rc/:slug', async (c) => {
   const { host, name, slug } = c.req.param();
   const { host: h } = await clientForName(host);
-  await kill({ ssh: shedSshTarget(h, name), slug });
+  await kill({ target: shedCommandTarget(h, name), slug });
   return c.body(null, 204);
 });
 

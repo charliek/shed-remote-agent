@@ -6,6 +6,13 @@ export interface SSHTarget {
   port: number;
 }
 
+/**
+ * Target for {@link run} and the RC primitives. SSH talks to a remote host;
+ * `local` runs the same command on the orchestrator host with no SSH hop
+ * (used for `type: local` machines, where Tailscale SSH can't loop back).
+ */
+export type CommandTarget = ({ kind: 'ssh' } & SSHTarget) | { kind: 'local' };
+
 export interface SSHResult {
   code: number;
   stdout: string;
@@ -36,17 +43,19 @@ export function classifySSHError(stderr: string, code: number): SSHErrorClass {
 export interface RunOptions {
   timeoutMs?: number;
   stdin?: string;
-  /** Extra ssh flags prepended before the target. */
+  /** Extra ssh flags prepended before the target. Ignored for local targets. */
   sshArgs?: string[];
 }
 
 /**
- * Run a command over SSH. Uses BatchMode so it never prompts; adds
- * accept-new hostkey handling so fresh hosts don't fail but known-host
- * mismatches still error.
+ * Run a command against the given target. For ssh, uses BatchMode so it never
+ * prompts and accept-new hostkey handling so fresh hosts don't fail but
+ * known-host mismatches still error. For local, spawns the same wire command
+ * via `bash -c` so quoting behaves identically to the remote path (the remote
+ * shell re-parses ssh's joined argv, so we pre-quote each token).
  */
 export async function run(
-  target: SSHTarget,
+  target: CommandTarget,
   argv: string[],
   opts: RunOptions = {},
 ): Promise<SSHResult> {
@@ -54,25 +63,31 @@ export async function run(
   // remote shell re-parses the result, stripping any quoting we put in
   // argv. Pre-quote each token so the remote shell reconstructs the
   // intended argv exactly, and pass the joined string as a single
-  // positional arg so ssh has nothing to re-join.
+  // positional arg so ssh has nothing to re-join. We feed the same quoted
+  // string to `bash -c` locally so behavior matches across kinds.
   const wireCmd = argv.map(shellQuote).join(' ');
+  const timeout = opts.timeoutMs ?? 15_000;
 
-  const args = [
-    '-o',
-    'BatchMode=yes',
-    '-o',
-    'StrictHostKeyChecking=accept-new',
-    '-o',
-    `ConnectTimeout=${Math.max(2, Math.floor((opts.timeoutMs ?? 10_000) / 1000))}`,
-    '-p',
-    String(target.port),
-    ...(opts.sshArgs ?? []),
-    `${target.user}@${target.host}`,
-    '--',
-    wireCmd,
-  ];
+  const spawnArgs =
+    target.kind === 'ssh'
+      ? [
+          'ssh',
+          '-o',
+          'BatchMode=yes',
+          '-o',
+          'StrictHostKeyChecking=accept-new',
+          '-o',
+          `ConnectTimeout=${Math.max(2, Math.floor(timeout / 1000))}`,
+          '-p',
+          String(target.port),
+          ...(opts.sshArgs ?? []),
+          `${target.user}@${target.host}`,
+          '--',
+          wireCmd,
+        ]
+      : ['bash', '-c', wireCmd];
 
-  const proc = Bun.spawn(['ssh', ...args], {
+  const proc = Bun.spawn(spawnArgs, {
     stdin: opts.stdin ? 'pipe' : 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -84,7 +99,6 @@ export async function run(
     writer.end();
   }
 
-  const timeout = opts.timeoutMs ?? 15_000;
   let timedOut = false;
   const killer = setTimeout(() => {
     timedOut = true;

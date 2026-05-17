@@ -48,7 +48,7 @@ describe('machinesFromConfig', () => {
     expect(machinesFromConfig(parseAppConfig(''))).toEqual([]);
   });
 
-  it('defaults ssh_port to 22 and passes through workdir', () => {
+  it('defaults ssh_port to 22 and passes through workdir (no type field = ssh)', () => {
     const cfg = parseAppConfig(`machines:
   - name: pop-os
     host: pop-os
@@ -61,13 +61,64 @@ describe('machinesFromConfig', () => {
 `);
     expect(machinesFromConfig(cfg)).toEqual([
       {
+        type: 'ssh',
         name: 'pop-os',
         host: 'pop-os',
         user: 'charliek',
         sshPort: 22,
         workdir: '/home/charliek/projects',
       },
-      { name: 'explicit-port', host: '10.0.0.5', user: 'ops', sshPort: 2200, workdir: undefined },
+      {
+        type: 'ssh',
+        name: 'explicit-port',
+        host: '10.0.0.5',
+        user: 'ops',
+        sshPort: 2200,
+        workdir: undefined,
+      },
     ]);
+  });
+
+  it('parses an explicit type: local entry', () => {
+    const cfg = parseAppConfig(`machines:
+  - name: mac-mini
+    type: local
+    user: charliek
+    workdir: /Users/charliek/projects
+`);
+    expect(machinesFromConfig(cfg)).toEqual([
+      {
+        type: 'local',
+        name: 'mac-mini',
+        user: 'charliek',
+        workdir: '/Users/charliek/projects',
+      },
+    ]);
+  });
+
+  it('parses a local entry with only name + workdir', () => {
+    const cfg = parseAppConfig(`machines:
+  - name: mac-mini
+    type: local
+    workdir: /Users/charliek/projects
+`);
+    expect(machinesFromConfig(cfg)).toEqual([
+      {
+        type: 'local',
+        name: 'mac-mini',
+        user: undefined,
+        workdir: '/Users/charliek/projects',
+      },
+    ]);
+  });
+
+  it('rejects ssh-only fields on a local entry', () => {
+    expect(() =>
+      parseAppConfig(`machines:
+  - name: mac-mini
+    type: local
+    host: should-not-be-here
+`),
+    ).toThrow();
   });
 });

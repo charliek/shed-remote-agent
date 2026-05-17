@@ -21,13 +21,26 @@ github:
 #       user: charliek
 #       path: /Users/charliek/projects
 
-# Native machines (non-shed) reachable via SSH that you also want to
-# bootstrap `claude remote-control` sessions on. Same RC UX as sheds, but
-# the SSH target is a regular user@host instead of <shedname>@shed-host.
-# Each machine needs `tmux` and (for repl/agent kinds) `claude` installed.
+# Native machines (non-shed) you also want to bootstrap `claude remote-control`
+# sessions on. Same RC UX as sheds. Two flavors:
+#
+#   - type: ssh    (default) — connects over SSH (e.g. Tailscale SSH to a
+#                  tailnet host). Each machine needs `tmux` and (for
+#                  repl/agent kinds) `claude` installed.
+#   - type: local  — runs commands directly on the host this orchestrator
+#                  is running on, with no SSH hop. Useful when Tailscale
+#                  SSH can't loop back to the local node and you don't
+#                  want to expose a local sshd.
+#
 # machines:
 #   - name: pop-os
+#     # type: ssh                # default, can be omitted
 #     host: pop-os               # tailnet hostname or IP
 #     user: charliek
 #     ssh_port: 22               # optional, default 22
 #     workdir: /home/charliek/projects   # default cwd for new RC sessions; default ~
+#
+#   - name: mac-mini
+#     type: local
+#     user: charliek             # optional, display-only
+#     workdir: /Users/charliek/projects

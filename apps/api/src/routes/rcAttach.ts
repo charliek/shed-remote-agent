@@ -79,7 +79,12 @@ rcAttach.get(
 
         try {
           attach = openAttach({
-            ssh: { host: resolvedHost.host, user: name, port: resolvedHost.sshPort },
+            target: {
+              kind: 'ssh',
+              host: resolvedHost.host,
+              user: name,
+              port: resolvedHost.sshPort,
+            },
             slug,
             cols,
             rows,

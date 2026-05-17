@@ -5,7 +5,9 @@
 | Prereq | Why |
 |--------|-----|
 | [Bun](https://bun.com) ≥ 1.0 | Runtime + workspace manager |
-| A running [`shed-server`](https://github.com/charliek/shed) | At least one entry in `~/.shed/config.yaml` |
+| A running [`shed-server`](https://github.com/charliek/shed) (optional) | Needed for the shed flow; not required if you only use native machines |
+| `tmux` on every RC target | Backs every RC session, including `type: local` machines (so `tmux` must be on the orchestrator host) |
+| `claude` on every RC target (for `agent` / `repl` kinds) | The `shell` kind only needs bash |
 | Claude subscription | `claude remote-control` requires `claude auth login` with a claude.ai account |
 | `gh` CLI (optional) | Powers the repo picker in the new-shed form |
 
@@ -75,6 +77,9 @@ curl http://localhost:8787/health
 
 curl http://localhost:8787/api/hosts
 # {"hosts":[{"name":"localhost-dev","host":"localhost","httpPort":8080,"sshPort":2222}]}
+
+curl http://localhost:8787/api/machines
+# {"machines":[]}
 ```
 
-If `/api/hosts` comes back empty, check that `~/.shed/config.yaml` has at least one `servers:` entry.
+If `/api/hosts` comes back empty, check that `~/.shed/config.yaml` has at least one `servers:` entry. If you want to skip sheds entirely and only use native machines, leave `~/.shed/config.yaml` empty and populate `machines:` in `~/.config/shed-remote-agent/config.yaml` — see [Configuration → With native machines](configuration.md).
