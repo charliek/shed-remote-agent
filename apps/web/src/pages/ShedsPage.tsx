@@ -45,13 +45,12 @@ export default function ShedsPage() {
     const q = filter.trim().toLowerCase();
     const list = machines.data?.machines ?? [];
     if (!q) return list;
-    return list.filter(
-      (m) =>
-        m.name.toLowerCase().includes(q) ||
-        m.host.toLowerCase().includes(q) ||
-        m.user.toLowerCase().includes(q) ||
-        m.workdir?.toLowerCase().includes(q),
-    );
+    return list.filter((m) => {
+      if (m.name.toLowerCase().includes(q)) return true;
+      if (m.workdir?.toLowerCase().includes(q)) return true;
+      if (m.type === 'local') return (m.user ?? '').toLowerCase().includes(q);
+      return m.host.toLowerCase().includes(q) || m.user.toLowerCase().includes(q);
+    });
   }, [machines.data, filter]);
 
   return (
@@ -150,11 +149,15 @@ function MachineRow({ machine }: { machine: Machine }) {
             <div className="flex items-center gap-2">
               <h3 className="truncate font-semibold">{machine.name}</h3>
               <Badge variant="outline">machine</Badge>
+              {machine.type === 'local' && <Badge variant="secondary">local</Badge>}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
               <span className="font-mono">
-                {machine.user}@{machine.host}
-                {machine.sshPort !== 22 ? `:${machine.sshPort}` : ''}
+                {machine.type === 'local'
+                  ? machine.user
+                    ? `${machine.user}@localhost`
+                    : 'localhost'
+                  : `${machine.user}@${machine.host}${machine.sshPort !== 22 ? `:${machine.sshPort}` : ''}`}
               </span>
             </div>
             {machine.workdir && (

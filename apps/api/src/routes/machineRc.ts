@@ -5,7 +5,7 @@ import {
   type RcSession,
 } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
-import { machineSshTarget, requireMachine } from '../lib/machineClients.js';
+import { machineCommandTarget, requireMachine } from '../lib/machineClients.js';
 import { bootstrap, kill, listRcSessions, probeUntilReady } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
 
@@ -23,7 +23,7 @@ machineRc.get('/:machine/rc', async (c) => {
   const { machine } = c.req.param();
   const m = await requireMachine(machine);
   const raw = await listRcSessions({
-    ssh: machineSshTarget(m),
+    target: machineCommandTarget(m),
     displayNameFallback: machineDisplayFallback(m),
   });
   const sessions: RcSession[] = raw.map((r) => ({
@@ -47,9 +47,9 @@ machineRc.post('/:machine/rc', async (c) => {
   const body = createRcRequestSchema.parse(await parseJsonBody(c));
   const kind = body.kind ?? DEFAULT_RC_KIND;
 
-  const ssh = machineSshTarget(m);
+  const target = machineCommandTarget(m);
   const { slug, tmuxSession, displayName, workdir } = await bootstrap({
-    ssh,
+    target,
     slug: body.slug,
     displayName: body.display_name,
     displayNameFallback: machineDisplayFallback(m),
@@ -58,7 +58,7 @@ machineRc.post('/:machine/rc', async (c) => {
     interactiveShell: true,
   });
 
-  const state = await probeUntilReady({ ssh, slug, kind });
+  const state = await probeUntilReady({ target, slug, kind });
 
   const session: RcSession = {
     slug,
@@ -76,7 +76,7 @@ machineRc.post('/:machine/rc', async (c) => {
 machineRc.delete('/:machine/rc/:slug', async (c) => {
   const { machine, slug } = c.req.param();
   const m = await requireMachine(machine);
-  await kill({ ssh: machineSshTarget(m), slug });
+  await kill({ target: machineCommandTarget(m), slug });
   return c.body(null, 204);
 });
 

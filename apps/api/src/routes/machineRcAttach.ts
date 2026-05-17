@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
-import { machineSshTarget, requireMachine } from '../lib/machineClients.js';
+import { machineCommandTarget, requireMachine } from '../lib/machineClients.js';
 import { type AttachHandle, openAttach, parseControlMessage } from '../lib/rcAttach.js';
 import { upgradeWebSocket } from '../lib/wsServer.js';
 
@@ -79,7 +79,7 @@ machineRcAttach.get(
 
         try {
           attach = openAttach({
-            ssh: machineSshTarget(resolvedMachine),
+            target: machineCommandTarget(resolvedMachine),
             slug,
             cols,
             rows,

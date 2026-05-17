@@ -115,6 +115,7 @@ export default function MachineDetailPage() {
           </Link>
           <span className="truncate">{machine}</span>
           <Badge variant="outline">machine</Badge>
+          {m?.type === 'local' && <Badge variant="secondary">local</Badge>}
         </div>
       }
     >
@@ -124,11 +125,22 @@ export default function MachineDetailPage() {
         <>
           <Card className="mb-4 p-4">
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-              <span className="text-muted-foreground">ssh</span>
-              <span className="font-mono text-xs">
-                {m.user}@{m.host}
-                {m.sshPort !== 22 ? `:${m.sshPort}` : ''}
-              </span>
+              {m.type === 'local' ? (
+                <>
+                  <span className="text-muted-foreground">runs on</span>
+                  <span className="font-mono text-xs">
+                    orchestrator host (no ssh){m.user ? ` — ${m.user}` : ''}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">ssh</span>
+                  <span className="font-mono text-xs">
+                    {m.user}@{m.host}
+                    {m.sshPort !== 22 ? `:${m.sshPort}` : ''}
+                  </span>
+                </>
+              )}
               {m.workdir && (
                 <>
                   <span className="text-muted-foreground">workdir</span>

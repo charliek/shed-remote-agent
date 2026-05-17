@@ -1,7 +1,7 @@
 import { DEFAULT_RC_KIND, type RcKind, type RcState } from '@shed-remote-agent/shared';
 import { AppError } from './errors.js';
 import { shellQuote } from './shell.js';
-import { classifySSHError, run, type SSHTarget } from './ssh.js';
+import { type CommandTarget, classifySSHError, run } from './ssh.js';
 
 export const RC_PREFIX = 'rc-';
 export const DEFAULT_WORKDIR = '/workspace';
@@ -68,7 +68,7 @@ export function buildInnerCommand(
 }
 
 export interface BootstrapOptions {
-  ssh: SSHTarget;
+  target: CommandTarget;
   /** Display name for the tmux session and `--name` flag. Defaults to slug. */
   displayName?: string;
   /** Optional fallback used when displayName is not provided; receives the
@@ -109,7 +109,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<{
     interactiveShell: opts.interactiveShell,
   });
   const result = await run(
-    opts.ssh,
+    opts.target,
     [
       'tmux',
       'new-session',
@@ -144,9 +144,9 @@ export async function bootstrap(opts: BootstrapOptions): Promise<{
   return { slug, tmuxSession: name, displayName, workdir, kind };
 }
 
-export async function kill(opts: { ssh: SSHTarget; slug: string }): Promise<void> {
+export async function kill(opts: { target: CommandTarget; slug: string }): Promise<void> {
   const name = tmuxName(opts.slug);
-  const result = await run(opts.ssh, ['tmux', 'kill-session', '-t', name], {
+  const result = await run(opts.target, ['tmux', 'kill-session', '-t', name], {
     timeoutMs: 5_000,
   });
   if (result.code === 0) return;
@@ -169,7 +169,7 @@ export async function kill(opts: { ssh: SSHTarget; slug: string }): Promise<void
 }
 
 export async function probe(opts: {
-  ssh: SSHTarget;
+  target: CommandTarget;
   slug: string;
   kind: RcKind;
 }): Promise<{ state: RcState; url?: string }> {
@@ -180,7 +180,7 @@ export async function probe(opts: {
   // sshd execs it directly. capture-pane already returns non-zero if the
   // session doesn't exist, so the previous has-session preflight is
   // redundant.
-  const result = await run(opts.ssh, ['tmux', 'capture-pane', '-t', name, '-p', '-S', '-200'], {
+  const result = await run(opts.target, ['tmux', 'capture-pane', '-t', name, '-p', '-S', '-200'], {
     timeoutMs: 5_000,
   });
 
@@ -270,7 +270,7 @@ export interface RawRcSession {
  * and a workdir default.
  */
 export async function listRcSessions(opts: {
-  ssh: SSHTarget;
+  target: CommandTarget;
   /** Used when a tmux session has no SRA_DISPLAY_NAME stored (e.g. created
    * before the env var was added). Receives the slug. */
   displayNameFallback?: (slug: string) => string;
@@ -289,7 +289,7 @@ done
   // the user has no controlling terminal, tmux invoked as a child of `bash
   // -c` fails with "open terminal failed: not a terminal", but works when
   // bash reads commands from stdin (the parent process layout differs).
-  const result = await run(opts.ssh, ['bash'], {
+  const result = await run(opts.target, ['bash'], {
     stdin: script,
     timeoutMs: 8_000,
   });
@@ -338,7 +338,7 @@ done
 }
 
 export async function probeUntilReady(opts: {
-  ssh: SSHTarget;
+  target: CommandTarget;
   slug: string;
   kind: RcKind;
   timeoutMs?: number;
@@ -346,7 +346,7 @@ export async function probeUntilReady(opts: {
   const deadline = Date.now() + (opts.timeoutMs ?? 20_000);
   let last: { state: RcState; url?: string } = { state: 'starting' };
   while (Date.now() < deadline) {
-    last = await probe({ ssh: opts.ssh, slug: opts.slug, kind: opts.kind });
+    last = await probe({ target: opts.target, slug: opts.slug, kind: opts.kind });
     if (last.state !== 'starting') return last;
     await new Promise((r) => setTimeout(r, 750));
   }
