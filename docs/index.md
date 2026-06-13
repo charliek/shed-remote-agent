@@ -12,6 +12,7 @@ A mobile-first web UI that browses [sheds](https://github.com/charliek/shed) acr
 - **In-browser xterm.js terminal** that attaches to the underlying tmux session over a WebSocket, with PTY resize and keep-alive
 - **Actionable state surface**: `starting`, `ready`, `reconnecting`, `needs-trust`, `needs-auth`, `dead` — no more guessing why a session isn't connected
 - **One-tap open** of the generated `https://claude.ai/code?environment=env_...` URL in the Claude app
+- **Light & dark theme** that follows your OS preference, with a manual toggle
 
 ## Architecture
 

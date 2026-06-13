@@ -22,6 +22,7 @@ Designed to live behind Tailscale — there is no auth layer.
   `claude.ai/code/session_...` URL with Copy/Open buttons
 - Surfaces actionable states: `starting`, `ready`, `reconnecting`, `needs-trust`,
   `needs-auth`, `dead`
+- Light and dark themes — follows your OS by default, with a one-tap toggle
 
 ## Stack
 
