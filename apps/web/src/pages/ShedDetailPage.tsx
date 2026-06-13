@@ -1,7 +1,7 @@
 import { DEFAULT_RC_KIND, type RcKind } from '@shed-remote-agent/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Play, Plus, Square, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Loader2, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RcCard } from '@/components/RcCard';
@@ -78,6 +78,16 @@ export default function ShedDetailPage() {
     SHED_ALLOWED_KINDS.includes(DEFAULT_RC_KIND) ? DEFAULT_RC_KIND : SHED_ALLOWED_KINDS[0],
   );
   const [displayName, setDisplayName] = useState('');
+  const [showNewSession, setShowNewSession] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const closeNewSession = () => {
+    setShowNewSession(false);
+    setDisplayName('');
+  };
+  // Focus the name field when the form is revealed.
+  useEffect(() => {
+    if (showNewSession) nameInputRef.current?.focus();
+  }, [showNewSession]);
   const newRcM = useMutation({
     mutationFn: () =>
       api.createRcSession(host, name, {
@@ -86,6 +96,7 @@ export default function ShedDetailPage() {
       }),
     onSuccess: (s) => {
       toastForRcCreate(s);
+      setShowNewSession(false);
       setDisplayName('');
       qc.invalidateQueries({ queryKey: ['rc', host, name] });
       qc.invalidateQueries({ queryKey: ['sessions', host, name] });
@@ -203,11 +214,82 @@ export default function ShedDetailPage() {
           </Card>
 
           <section className="mt-6">
-            <div className="mb-3">
-              <h2 className="font-semibold text-sm uppercase tracking-wide">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-bold text-faint text-xs uppercase tracking-wider">
                 Remote-control sessions
               </h2>
+              {running && !showNewSession && (rc.data?.rc_sessions.length ?? 0) > 0 && (
+                <Button
+                  variant="secondary"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => setShowNewSession(true)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New session
+                </Button>
+              )}
             </div>
+
+            {running && showNewSession && (
+              <Card className="mb-3 animate-rise space-y-3 p-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">New session</h3>
+                  <button
+                    type="button"
+                    onClick={closeNewSession}
+                    aria-label="Cancel"
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="rc-display-name"
+                    className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+                  >
+                    Session name
+                  </label>
+                  <input
+                    id="rc-display-name"
+                    ref={nameInputRef}
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') closeNewSession();
+                    }}
+                    placeholder={`${name}/<slug>`}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    disabled={newRcM.isPending}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="block font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                    Kind
+                  </span>
+                  <RcKindPicker
+                    value={rcKind}
+                    onChange={setRcKind}
+                    disabled={newRcM.isPending}
+                    allowedKinds={SHED_ALLOWED_KINDS}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={closeNewSession} disabled={newRcM.isPending}>
+                    Cancel
+                  </Button>
+                  <Button disabled={newRcM.isPending} onClick={() => newRcM.mutate()}>
+                    {newRcM.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    Create
+                  </Button>
+                </div>
+              </Card>
+            )}
 
             {!running ? (
               <EmptyState
@@ -229,63 +311,19 @@ export default function ShedDetailPage() {
                   <RcCard key={r.slug} s={r} />
                 ))}
               </div>
-            ) : (
+            ) : showNewSession ? null : (
               <EmptyState
-                title="No remote-control sessions"
-                description="Create one below to get started."
+                title="No remote-control sessions yet"
+                description="Spin up a remote-control session to get started."
+                action={
+                  <Button onClick={() => setShowNewSession(true)}>
+                    <Plus className="h-4 w-4" />
+                    New session
+                  </Button>
+                }
               />
             )}
           </section>
-
-          {running && (
-            <section className="mt-6">
-              <div className="mb-3">
-                <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-                  New session
-                </h2>
-              </div>
-              <Card className="space-y-3 p-3">
-                <div className="space-y-1">
-                  <label
-                    htmlFor="rc-display-name"
-                    className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
-                  >
-                    Session name
-                  </label>
-                  <input
-                    id="rc-display-name"
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder={`${name}/<slug>`}
-                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    disabled={newRcM.isPending}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <span className="block font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                    Kind
-                  </span>
-                  <RcKindPicker
-                    value={rcKind}
-                    onChange={setRcKind}
-                    disabled={newRcM.isPending}
-                    allowedKinds={SHED_ALLOWED_KINDS}
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <Button disabled={newRcM.isPending} onClick={() => newRcM.mutate()}>
-                    {newRcM.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Plus className="h-4 w-4" />
-                    )}
-                    Create
-                  </Button>
-                </div>
-              </Card>
-            </section>
-          )}
 
           {(() => {
             // Anything not in the curated rc list above — orphans, manually

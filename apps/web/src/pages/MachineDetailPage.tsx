@@ -1,7 +1,7 @@
 import { DEFAULT_RC_KIND, type Machine, type RcKind } from '@shed-remote-agent/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeft, Loader2, Plus, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { LocalDirPicker } from '@/components/LocalDirPicker';
@@ -38,6 +38,16 @@ export default function MachineDetailPage() {
   );
   const [displayName, setDisplayName] = useState('');
   const [workdir, setWorkdir] = useState('');
+  const [showNewSession, setShowNewSession] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const closeNewSession = () => {
+    setShowNewSession(false);
+    setDisplayName('');
+  };
+  // Focus the name field when the form is revealed.
+  useEffect(() => {
+    if (showNewSession) nameInputRef.current?.focus();
+  }, [showNewSession]);
 
   // Default workdir to the configured machine.workdir whenever the route
   // changes machines (the page component instance is re-used by react-router
@@ -58,6 +68,7 @@ export default function MachineDetailPage() {
       }),
     onSuccess: (s) => {
       toastForRcCreate(s);
+      setShowNewSession(false);
       setDisplayName('');
       qc.invalidateQueries({ queryKey: ['machineRc', machine] });
     },
@@ -151,11 +162,96 @@ export default function MachineDetailPage() {
           </Card>
 
           <section className="mt-6">
-            <div className="mb-3">
-              <h2 className="font-semibold text-sm uppercase tracking-wide">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-bold text-faint text-xs uppercase tracking-wider">
                 Remote-control sessions
               </h2>
+              {!showNewSession && (rc.data?.rc_sessions.length ?? 0) > 0 && (
+                <Button
+                  variant="secondary"
+                  className="h-8 px-3 text-xs"
+                  onClick={() => setShowNewSession(true)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New session
+                </Button>
+              )}
             </div>
+
+            {showNewSession && (
+              <Card className="mb-3 animate-rise space-y-3 p-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">New session</h3>
+                  <button
+                    type="button"
+                    onClick={closeNewSession}
+                    aria-label="Cancel"
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="rc-display-name"
+                    className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+                  >
+                    Session name
+                  </label>
+                  <input
+                    id="rc-display-name"
+                    ref={nameInputRef}
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') closeNewSession();
+                    }}
+                    placeholder={`${machine}/<slug>`}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    disabled={newRcM.isPending}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="block font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                    Kind
+                  </span>
+                  <RcKindPicker
+                    value={rcKind}
+                    onChange={setRcKind}
+                    disabled={newRcM.isPending}
+                    allowedKinds={ALLOWED_KINDS}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="block font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                    Workdir
+                  </span>
+                  <LocalDirPicker
+                    source={{ kind: 'machine', machine }}
+                    value={workdir}
+                    onChange={setWorkdir}
+                    allowRoot
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={closeNewSession} disabled={newRcM.isPending}>
+                    Cancel
+                  </Button>
+                  <Button disabled={newRcM.isPending || !workdir} onClick={() => newRcM.mutate()}>
+                    {newRcM.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    Create
+                  </Button>
+                </div>
+              </Card>
+            )}
 
             {rc.error ? (
               <Card className="border-destructive p-3 text-sm">
@@ -172,75 +268,18 @@ export default function MachineDetailPage() {
                   <RcCard key={r.slug} s={r} />
                 ))}
               </div>
-            ) : (
+            ) : showNewSession ? null : (
               <EmptyState
-                title="No remote-control sessions"
-                description="Create one below to get started."
+                title="No remote-control sessions yet"
+                description="Spin up a remote-control session to get started."
+                action={
+                  <Button onClick={() => setShowNewSession(true)}>
+                    <Plus className="h-4 w-4" />
+                    New session
+                  </Button>
+                }
               />
             )}
-          </section>
-
-          <section className="mt-6">
-            <div className="mb-3">
-              <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-                New session
-              </h2>
-            </div>
-
-            <Card className="space-y-3 p-3">
-              <div className="space-y-1">
-                <label
-                  htmlFor="rc-display-name"
-                  className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
-                >
-                  Session name
-                </label>
-                <input
-                  id="rc-display-name"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder={`${machine}/<slug>`}
-                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  disabled={newRcM.isPending}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <span className="block font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                  Kind
-                </span>
-                <RcKindPicker
-                  value={rcKind}
-                  onChange={setRcKind}
-                  disabled={newRcM.isPending}
-                  allowedKinds={ALLOWED_KINDS}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <span className="block font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                  Workdir
-                </span>
-                <LocalDirPicker
-                  source={{ kind: 'machine', machine }}
-                  value={workdir}
-                  onChange={setWorkdir}
-                  allowRoot
-                />
-              </div>
-
-              <div className="flex justify-end">
-                <Button disabled={newRcM.isPending || !workdir} onClick={() => newRcM.mutate()}>
-                  {newRcM.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  Create
-                </Button>
-              </div>
-            </Card>
           </section>
         </>
       )}
