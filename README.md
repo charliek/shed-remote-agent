@@ -89,10 +89,6 @@ Prereqs on the new machine:
 
 - [Bun](https://bun.com), [`prox`](https://github.com/charliek/prox), and
   `gh` (optional, for the repo picker)
-- `shed-host-agent` on `$PATH` — install from the
-  [shed-extensions releases](https://github.com/charliek/shed-extensions/releases)
-  or `make build-host` in a local checkout and symlink the binary into
-  `~/.local/bin/` (or `/usr/local/bin/`)
 - `~/.shed/config.yaml` listing the shed servers (this is the shed CLI's
   own config — copy it from your other machine)
 - `~/.config/shed-remote-agent/config.yaml` — copy
@@ -105,12 +101,19 @@ Then:
 git clone https://github.com/charliek/shed-remote-agent.git
 cd shed-remote-agent
 bun install
-prox up                    # api + web + every shed-host-agent-* entry declared in prox.yaml
+prox up                    # api + web (the dev servers declared in prox.yaml)
 ```
 
-Host-agent configs live in [`host-agents/`](./host-agents/). To broker creds
-for an additional shed host, add a `host-agents/extensions.<host>.yaml` and
-a matching `shed-host-agent-<host>` entry in [`prox.yaml`](./prox.yaml).
+This orchestrator does **not** run or supervise any `shed-host-agent`.
+Credential brokering (ssh-agent / docker / aws) is owned by a per-host
+`shed-host-agent`, installed and run by Homebrew on each shed host and scoped
+to that host's local shed-server — see
+[shed-extensions](https://github.com/charliek/shed-extensions):
+
+```bash
+brew install charliek/tap/shed-host-agent
+brew services start shed-host-agent
+```
 
 ### Documentation development
 

@@ -1,30 +1,18 @@
 # Local dev topology for shed-remote-agent.
 #
-# Covers two things in one place:
-#   1. This project's own services (api + web).
-#   2. One shed-host-agent process per shed host we want to broker credentials
-#      for (mini2, mini3). Each agent subscribes to a single shed-server over
-#      tailscale and answers ssh-agent / docker-credentials extension requests
-#      using the local user's keys (~/.ssh, ~/.docker/config.json).
+# Supervises this project's own services only: the api + web dev servers.
 #
-# Prereqs (per machine):
-#   - `shed-host-agent` on $PATH — install from
-#     https://github.com/charliek/shed-extensions/releases or symlink a dev
-#     build (`make build-host` in shed-extensions, then ln -sf into ~/.local/bin).
+# Credential brokering (ssh-agent / docker / aws) is NO LONGER run from here.
+# Each shed host runs its own shed-host-agent, installed and managed by Homebrew
+# (`brew install charliek/tap/shed-host-agent`; `brew services start
+# shed-host-agent`), scoped to that host's local shed-server only — this Mac's
+# agent brokers just its localhost server; mini2/mini3 each broker their own.
+# The shed CLI (and this app, via ~/.shed/config.yaml) still reach every server
+# regardless of host-agent scope, so the orchestrator needs no agent of its own.
 #
-# Add more hosts by:
-#   1. Writing host-agents/extensions.<host>.yaml in this repo
-#   2. Adding a shed-host-agent-<host> entry below
-#
-# HTTPS routing for the app is still handled by devproxy (see devproxy.yaml);
-# prox here is only a process supervisor.
+# HTTPS routing for the app is handled by devproxy (see devproxy.yaml); prox
+# here is only a process supervisor.
 
 processes:
   api: bun run dev:api
   web: bun run dev:web
-
-  shed-host-agent-mini2:
-    cmd: shed-host-agent -config host-agents/extensions.mini2.yaml
-
-  shed-host-agent-mini3:
-    cmd: shed-host-agent -config host-agents/extensions.mini3.yaml
