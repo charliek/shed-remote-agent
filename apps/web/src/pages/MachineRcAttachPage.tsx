@@ -19,22 +19,22 @@ export default function MachineRcAttachPage() {
   const displayName = session?.display_name ?? `${machine}/${slug}`;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#0b0d12] text-zinc-100">
-      <header className="flex items-center gap-3 border-zinc-800 border-b px-3 py-2 text-sm">
+    <div className="fixed inset-0 flex flex-col bg-[#1b1713] text-[#f0e9df]">
+      <header className="flex items-center gap-3 border-[#33291f] border-b px-3 py-2.5 text-sm">
         <Link
           to={`/machines/${encodeURIComponent(machine)}`}
-          className="text-zinc-400 hover:text-zinc-100"
+          className="text-[#a99a86] transition-colors hover:text-[#f0e9df]"
           aria-label="Back to machine"
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <span className="truncate font-mono">{displayName}</span>
+        <span className="truncate font-medium font-mono">{displayName}</span>
         {session?.state && (
-          <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-medium text-xs text-zinc-300">
+          <span className="rounded-full bg-[#33291f] px-2 py-0.5 font-semibold text-[#d8cbb8] text-xs">
             {session.state}
           </span>
         )}
-        <span className="ml-auto truncate text-xs text-zinc-500">
+        <span className="ml-auto truncate font-mono text-[#8a7c68] text-xs">
           {machine} · {slug}
         </span>
       </header>

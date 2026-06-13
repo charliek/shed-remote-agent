@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import App from './App';
 import { ErrorBoundary } from './components/error-boundary';
 import { queryClient } from './lib/query-client';
+import { ThemeProvider } from './lib/theme';
 import './index.css';
 
 const rootEl = document.getElementById('root');
@@ -13,10 +14,12 @@ if (!rootEl) throw new Error('Root element not found');
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <App />
-        <Toaster />
-      </QueryClientProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+          <Toaster theme="system" toastOptions={{ className: 'font-sans' }} />
+        </QueryClientProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );

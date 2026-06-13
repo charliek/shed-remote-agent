@@ -9,31 +9,31 @@ import { cn } from '@/lib/cn';
 import { Button, Card } from './ui';
 
 const kindInfo: Record<RcKind, { label: string; tone: string }> = {
-  agent: { label: 'agent', tone: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
-  repl: { label: 'repl', tone: 'bg-violet-500/15 text-violet-700 dark:text-violet-400' },
-  shell: { label: 'shell', tone: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-400' },
+  agent: { label: 'agent', tone: 'bg-ochre-soft text-ochre' },
+  repl: { label: 'repl', tone: 'bg-primary-soft text-primary' },
+  shell: { label: 'shell', tone: 'bg-secondary text-muted-foreground' },
 };
 
 const stateInfo: Record<RcState, { label: string; tone: string; hint?: string }> = {
-  starting: { label: 'starting', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
-  ready: { label: 'ready', tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' },
+  starting: { label: 'starting', tone: 'bg-ochre-soft text-ochre' },
+  ready: { label: 'ready', tone: 'bg-sage-soft text-sage' },
   reconnecting: {
     label: 'reconnecting',
-    tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+    tone: 'bg-ochre-soft text-ochre',
   },
   'needs-trust': {
     label: 'workspace trust needed',
-    tone: 'bg-amber-500/15 text-amber-800 dark:text-amber-300',
+    tone: 'bg-ochre-soft text-ochre',
     hint: 'Open a shell: `shed attach <name>`, cd to the workdir, run `claude` once to accept the trust prompt, then create a new remote-control session.',
   },
   'needs-auth': {
     label: 'claude auth needed',
-    tone: 'bg-destructive/15 text-destructive',
+    tone: 'bg-destructive/12 text-destructive',
     hint: 'Open a shell: `shed attach <name>` and run `claude auth login` in the shed before creating a session.',
   },
   dead: {
     label: 'dead',
-    tone: 'bg-muted text-muted-foreground',
+    tone: 'bg-secondary text-faint',
     hint: 'The tmux session is gone. Delete this entry or create a new session.',
   },
 };
