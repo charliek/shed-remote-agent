@@ -148,7 +148,7 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
 | Field | Default | Notes |
 |-------|---------|-------|
 | `slug` | auto-generated (6 confusable-free chars) | Must match `^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$` |
-| `display_name` | `<shed>/<slug>` or `<machine>/<slug>` | Stored in tmux env (`SRA_DISPLAY_NAME`) and passed as `--name` to `claude` |
+| `display_name` | `<shed>/<slug>` or `<machine>/<slug>` | Stored in tmux env (`SHED_RC_DISPLAY_NAME`) and passed as `--name` to `claude`. Must be single-line (no control characters). |
 | `workdir` | `/workspace` for sheds; the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`) |
 | `kind` | `repl` | One of `agent`, `repl`, `shell`. See [Remote Control → Session kinds](remote-control.md#session-kinds). |
 
@@ -163,11 +163,18 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
   "kind": "repl",
   "state": "ready",
   "url": "https://claude.ai/code/session_01ABC...",
-  "target": { "kind": "shed", "shed_name": "my-shed", "host": "localhost-dev" }
+  "target": { "kind": "shed", "shed_name": "my-shed", "host": "localhost-dev" },
+  "id": "9f1c0e7a-1111-4222-8333-444455556666",
+  "created_by": "shed-remote-agent/0.1.0",
+  "created_at": "2026-06-13T19:20:00Z",
+  "target_label": "shed:my-shed@localhost-dev",
+  "managed": true
 }
 ```
 
 For machine targets, `target` is `{ "kind": "machine", "machine_name": "<name>" }`. `url` is only populated for `agent` and `repl` kinds once the pane reaches `ready`; `shell` sessions never produce a URL.
+
+The `id`, `created_by`, `created_at`, `target_label`, and `managed` fields come from the [RC Session Convention](rc-session-convention.md) metadata stored in the tmux session. They are absent (or `managed: false`) for legacy/unmanaged `rc-*` sessions created before the convention.
 
 See [Remote Control](remote-control.md) for the meaning of each state.
 

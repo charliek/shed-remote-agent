@@ -1,14 +1,59 @@
-import { DEFAULT_RC_KIND, type RcKind, type RcState } from '@shed-remote-agent/shared';
+import {
+  DEFAULT_RC_KIND,
+  hasControlChars,
+  type RcKind,
+  type RcSession,
+  type RcState,
+  type RcTarget,
+} from '@shed-remote-agent/shared';
+import apiPkg from '../../package.json';
 import { AppError } from './errors.js';
 import { shellQuote } from './shell.js';
 import { type CommandTarget, classifySSHError, run } from './ssh.js';
 
 export const RC_PREFIX = 'rc-';
 export const DEFAULT_WORKDIR = '/workspace';
-const PANE_SEP = '---RC-PANE---';
-const NAME_SEP = '---RC-NAME---';
-const KIND_SEP = '---RC-KIND---';
-const WORKDIR_SEP = '---RC-WORKDIR---';
+
+/** Schema version stamped into SHED_RC_V. Bumped only for breaking changes
+ * (additive keys do not bump it). See docs/reference/rc-session-convention.md. */
+export const RC_SCHEMA_VERSION = 1;
+/** Stable tool identifier for SHED_RC_CREATED_BY. MUST NOT contain '/'. */
+export const RC_TOOL_NAME = 'shed-remote-agent';
+/** `<tool>/<version>` provenance string. The version is read from this package's
+ * own version field — NOT package.json `name`, which is "api". */
+export const RC_CREATED_BY = `${RC_TOOL_NAME}/${apiPkg.version}`;
+
+// Well-known SHED_RC_* session-env keys — the cross-tool RC Session Convention
+// v1. The tmux session is the source of truth; any tool that can read these
+// keys can discover, classify, attach to, and tear down a session.
+const ENV = {
+  v: 'SHED_RC_V',
+  id: 'SHED_RC_ID',
+  displayName: 'SHED_RC_DISPLAY_NAME',
+  kind: 'SHED_RC_KIND',
+  workdir: 'SHED_RC_WORKDIR',
+  createdBy: 'SHED_RC_CREATED_BY',
+  createdAt: 'SHED_RC_CREATED_AT',
+  target: 'SHED_RC_TARGET',
+} as const;
+const ENV_PREFIX = 'SHED_RC_';
+
+// Section markers for the batched list-and-probe script. Built from a random
+// per-invocation nonce so neither arbitrary pane text nor metadata values
+// (e.g. a display name of "---RC-PANE---") can collide with a delimiter and
+// corrupt block parsing.
+export interface ListMarkers {
+  session: string;
+  env: string;
+  pane: string;
+}
+function rcListMarkers(nonce: string): ListMarkers {
+  const base = `@@RC:${nonce}`;
+  return { session: `${base}:S`, env: `${base}:E`, pane: `${base}:P` };
+}
+
+// RFC3339 UTC with a trailing Z (the shape Date.prototype.toISOString produces).
+const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 // Alphabet chosen to avoid visually-confusable characters so short slugs
 // survive a human reading a QR or typed URL.
@@ -25,13 +70,102 @@ function tmuxName(slug: string): string {
   return `${RC_PREFIX}${slug}`;
 }
 
-// tmux's command parser re-tokenizes the argument to `-e` on whitespace
-// and interprets a small set of meta characters even after the outer
-// shell has handed it a single argv element. A multi-word value like
-// "Friday Bug Fix" would silently abort the new session. Backslash-escape
-// the meta chars so tmux's internal parser preserves the original value.
-function tmuxArgEscape(s: string): string {
-  return s.replace(/[\\$"' \t]/g, '\\$&');
+/** Enforce the convention's value grammar: single-line UTF-8, no control
+ * characters. The list parser is line-oriented, so an embedded newline would
+ * corrupt parsing of every session that follows. */
+function assertEnvValue(key: string, value: string): string {
+  if (hasControlChars(value)) {
+    throw new AppError('BAD_REQUEST', `${key} must not contain control characters`, 400);
+  }
+  return value;
+}
+
+export interface RcMetadata {
+  id: string;
+  displayName: string;
+  kind: RcKind;
+  workdir: string;
+  createdBy: string;
+  createdAt: string;
+  /** Optional, advisory target label (non-authoritative). */
+  target?: string;
+}
+
+/**
+ * Raw, unescaped SHED_RC_* key/value pairs in deterministic order. The single
+ * source of truth for the metadata a managed RC session carries (v1).
+ */
+export function rcMetaEnv(meta: RcMetadata): Array<[string, string]> {
+  const pairs: Array<[string, string]> = [
+    [ENV.v, String(RC_SCHEMA_VERSION)],
+    [ENV.id, meta.id],
+    [ENV.displayName, meta.displayName],
+    [ENV.kind, meta.kind],
+    [ENV.workdir, meta.workdir],
+    [ENV.createdBy, meta.createdBy],
+    [ENV.createdAt, meta.createdAt],
+  ];
+  if (meta.target) pairs.push([ENV.target, meta.target]);
+  return pairs;
+}
+
+/**
+ * Build the `-e KEY=value …` argv fragment for `tmux new-session`, escaping each
+ * value for tmux's internal parser. Pure — unit-tested without a real tmux.
+ */
+export function buildRcEnvArgs(meta: RcMetadata): string[] {
+  const args: string[] = [];
+  for (const [k, v] of rcMetaEnv(meta)) {
+    // The value is passed raw. run() shell-quotes every token, so tmux receives
+    // each KEY=value as a single argv element and stores it verbatim — no tmux
+    // escaping needed. (Backslash-escaping here is stored literally; verified
+    // against tmux 3.6.) assertEnvValue enforces the single-line grammar.
+    args.push('-e', `${k}=${assertEnvValue(k, v)}`);
+  }
+  return args;
+}
+
+/**
+ * Parse a `tmux show-environment` dump into SHED_RC_* key→value. tmux prints
+ * `KEY=value` for set vars (and a bare `-KEY` for removed ones, which we skip).
+ */
+export function parseRcEnv(dump: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const line of dump.split('\n')) {
+    if (!line.startsWith(ENV_PREFIX)) continue;
+    const eq = line.indexOf('=');
+    if (eq === -1) continue;
+    out.set(line.slice(0, eq), line.slice(eq + 1));
+  }
+  return out;
+}
+
+function normalizeCreatedAt(raw: string | undefined): string | undefined {
+  return raw && RFC3339_UTC.test(raw) ? raw : undefined;
+}
+
+/** A session is "managed" only when SHED_RC_V is a positive integer. Missing or
+ * malformed versions are treated as legacy/unmanaged. A version higher than the
+ * one we know is still managed (forward-compat): we render the fields we
+ * understand and never drop the session. */
+function isManagedVersion(raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1;
+}
+
+/** tmux refuses to create a session whose name already exists. A caller-supplied
+ * slug that's already taken surfaces here — a 409 (conflict), not a 500. */
+export function isDuplicateSessionError(stderr: string): boolean {
+  return /duplicate session|already exists/i.test(stderr);
+}
+
+/** tmux kill-session returns non-zero when the session is already gone — either
+ * the session name is unknown, or killing the last session stopped the server
+ * entirely ("no server running on …"). Both mean "already gone", so treating
+ * them as success keeps kill idempotent. */
+export function isMissingSessionError(stderr: string): boolean {
+  return /can't find session|no session|no server running/i.test(stderr);
 }
 
 /**
@@ -78,6 +212,17 @@ export interface BootstrapOptions {
   workdir?: string;
   slug?: string;
   kind?: RcKind;
+  /** Stable session id stored as SHED_RC_ID. Defaults to a generated UUIDv4. */
+  id?: string;
+  /** Provenance `<tool>/<version>` stored as SHED_RC_CREATED_BY. Defaults to
+   * this tool's RC_CREATED_BY. */
+  createdBy?: string;
+  /** Creation timestamp (RFC3339 UTC) stored as SHED_RC_CREATED_AT. Defaults to
+   * the current time. */
+  createdAt?: string;
+  /** Optional advisory target label stored as SHED_RC_TARGET (non-authoritative;
+   * e.g. `shed:<name>@<host>` or `machine:<name>`). */
+  targetLabel?: string;
   /** Wrap repl/agent commands with `bash -ic` so the user's ~/.bashrc runs
    * and PATH-mutating tools (nvm/asdf/pnpm) are picked up. Default false —
    * sheds bake claude into a system path so they don't need it. Set true
@@ -85,18 +230,28 @@ export interface BootstrapOptions {
   interactiveShell?: boolean;
 }
 
-export async function bootstrap(opts: BootstrapOptions): Promise<{
+export interface BootstrapResult {
   slug: string;
   tmuxSession: string;
   displayName: string;
   workdir: string;
   kind: RcKind;
-}> {
+  id: string;
+  createdBy: string;
+  createdAt: string;
+  target?: string;
+}
+
+export async function bootstrap(opts: BootstrapOptions): Promise<BootstrapResult> {
   const slug = opts.slug ?? genSlug();
   const displayName = opts.displayName ?? opts.displayNameFallback?.(slug) ?? slug;
   const workdir = opts.workdir ?? DEFAULT_WORKDIR;
   const kind = opts.kind ?? DEFAULT_RC_KIND;
   const name = tmuxName(slug);
+  const id = opts.id ?? crypto.randomUUID();
+  const createdBy = opts.createdBy ?? RC_CREATED_BY;
+  const createdAt = opts.createdAt ?? new Date().toISOString();
+  const target = opts.targetLabel;
 
   // Run tmux directly as the ssh command instead of wrapping in `bash -c`.
   // When tmux is a grandchild of sshd through a bash shell, the bash
@@ -108,30 +263,22 @@ export async function bootstrap(opts: BootstrapOptions): Promise<{
   const inner = buildInnerCommand(kind, displayName, {
     interactiveShell: opts.interactiveShell,
   });
+  const envArgs = buildRcEnvArgs({ id, displayName, kind, workdir, createdBy, createdAt, target });
   const result = await run(
     opts.target,
-    [
-      'tmux',
-      'new-session',
-      '-d',
-      '-s',
-      name,
-      '-c',
-      workdir,
-      '-e',
-      `SRA_DISPLAY_NAME=${tmuxArgEscape(displayName)}`,
-      '-e',
-      `SRA_KIND=${kind}`,
-      '-e',
-      `SRA_WORKDIR=${tmuxArgEscape(workdir)}`,
-      inner,
-    ],
+    ['tmux', 'new-session', '-d', '-s', name, '-c', workdir, ...envArgs, inner],
     { timeoutMs: 10_000 },
   );
 
   if (result.code !== 0) {
     const cls = classifySSHError(result.stderr, result.code);
     const combined = `${result.stderr}\n${result.stdout}`.trim();
+    // A caller-supplied slug that's already taken is a "stepped on each other"
+    // case, not a server fault — surface it as a 409 so the caller can retry
+    // with a fresh slug instead of seeing a generic 500.
+    if (isDuplicateSessionError(result.stderr)) {
+      throw new AppError('RC_SLUG_TAKEN', `RC session "${name}" already exists`, 409);
+    }
     if (cls === 'auth-denied') {
       throw new AppError('SSH_AUTH_DENIED', `SSH authentication denied: ${combined}`, 401);
     }
@@ -141,7 +288,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<{
     throw new AppError('BOOTSTRAP_FAILED', combined || `ssh exited ${result.code}`, 500);
   }
 
-  return { slug, tmuxSession: name, displayName, workdir, kind };
+  return { slug, tmuxSession: name, displayName, workdir, kind, id, createdBy, createdAt, target };
 }
 
 export async function kill(opts: { target: CommandTarget; slug: string }): Promise<void> {
@@ -163,7 +310,7 @@ export async function kill(opts: { target: CommandTarget; slug: string }): Promi
     throw new AppError('SSH_UNREACHABLE', `SSH ${cls}: ${result.stderr.trim()}`, 502);
   }
   // tmux kill-session returns non-zero when the session doesn't exist — idempotent success.
-  if (/can't find session|no session/i.test(result.stderr)) return;
+  if (isMissingSessionError(result.stderr)) return;
 
   throw new AppError('KILL_FAILED', result.stderr.trim() || `ssh exited ${result.code}`, 502);
 }
@@ -245,7 +392,9 @@ export function classifyPane(kind: RcKind, pane: string): { state: RcState; url?
 
 function parseKind(raw: string): RcKind {
   if (raw === 'agent' || raw === 'repl' || raw === 'shell') return raw;
-  // Pre-feature sessions never set SRA_KIND; default to today's behavior.
+  // Legacy/unmanaged sessions (no SHED_RC_KIND) predate the field and were all
+  // agents — default to `agent`. NOTE: this is intentionally different from the
+  // create-time default (DEFAULT_RC_KIND = 'repl').
   return 'agent';
 }
 
@@ -253,42 +402,153 @@ export interface RawRcSession {
   slug: string;
   tmux_session: string;
   display_name: string;
-  /** The workdir captured at bootstrap (via SRA_WORKDIR env var). Undefined
-   * for pre-feature sessions that don't have the env var set; callers
-   * should fall back to their default in that case. */
+  /** The workdir captured at bootstrap (via SHED_RC_WORKDIR). Undefined for
+   * legacy/unmanaged sessions; callers fall back to their target default. */
   workdir?: string;
   kind: RcKind;
   state: RcState;
   url?: string;
+  /** Stable session id (SHED_RC_ID). Undefined for legacy/unmanaged sessions. */
+  id?: string;
+  created_by?: string;
+  created_at?: string;
+  /** Advisory target label (SHED_RC_TARGET); non-authoritative. Matches the
+   * wire field name so {@link toRcSession} can copy it through. */
+  target_label?: string;
+  /** True when SHED_RC_V is present (created under the convention). */
+  managed: boolean;
 }
 
 /**
- * Single-SSH list-and-probe: fetches all tmux session names and their panes
- * in one remote shell invocation so we don't pay N+1 SSH handshakes.
+ * Project the target-agnostic {@link RawRcSession} onto the wire
+ * {@link RcSession}. This is the single place the metadata field set crosses to
+ * the wire, so a new SHED_RC_* field added to RawRcSession reaches every route
+ * (list and create, shed and machine) without editing each mapper.
+ */
+export function toRcSession(
+  raw: RawRcSession,
+  opts: { target: RcTarget; defaultWorkdir: string },
+): RcSession {
+  return {
+    ...raw,
+    // Legacy/unmanaged sessions don't carry a workdir; fall back to the
+    // caller's target-specific default.
+    workdir: raw.workdir ?? opts.defaultWorkdir,
+    target: opts.target,
+  };
+}
+
+export interface ParseRcSessionInput {
+  tmuxSession: string;
+  /** A `tmux show-environment` dump filtered to SHED_RC_* lines. */
+  envDump: string;
+  pane: string;
+  /** Used when a session has no SHED_RC_DISPLAY_NAME. Receives the slug. */
+  displayNameFallback?: (slug: string) => string;
+}
+
+/**
+ * Reconstruct one RC session's wire-shape from its tmux env dump + pane. Pure
+ * (no SSH/tmux) so it can be unit-tested directly. State/url stay derived from
+ * the pane via the classifier; they are never stored.
+ */
+export function parseRcSession(input: ParseRcSessionInput): RawRcSession {
+  const env = parseRcEnv(input.envDump);
+  const slug = input.tmuxSession.slice(RC_PREFIX.length);
+
+  // Legacy/unmanaged: no valid SHED_RC_V. Any stray SHED_RC_* values are not
+  // under a known schema version, so ignore them and apply legacy defaults
+  // (kind=agent, fallback display name, caller's target-default workdir).
+  if (!isManagedVersion(env.get(ENV.v)?.trim())) {
+    const kind: RcKind = 'agent';
+    const { state, url } = classifyPane(kind, input.pane);
+    return {
+      slug,
+      tmux_session: input.tmuxSession,
+      display_name: input.displayNameFallback?.(slug) || slug,
+      kind,
+      state,
+      url,
+      managed: false,
+    };
+  }
+
+  const kind = parseKind((env.get(ENV.kind) ?? '').trim());
+  const { state, url } = classifyPane(kind, input.pane);
+  const storedName = env.get(ENV.displayName)?.trim();
+  const storedWorkdir = env.get(ENV.workdir)?.trim();
+  return {
+    slug,
+    tmux_session: input.tmuxSession,
+    display_name: storedName || input.displayNameFallback?.(slug) || slug,
+    workdir: storedWorkdir || undefined,
+    kind,
+    state,
+    url,
+    id: env.get(ENV.id)?.trim() || undefined,
+    created_by: env.get(ENV.createdBy)?.trim() || undefined,
+    created_at: normalizeCreatedAt(env.get(ENV.createdAt)?.trim()),
+    target_label: env.get(ENV.target)?.trim() || undefined,
+    managed: true,
+  };
+}
+
+/**
+ * Split the batched list script's stdout into per-session blocks and parse each.
+ * Pure — paired with {@link listRcSessions} which produces the stdout.
+ */
+export function parseListOutput(
+  stdout: string,
+  markers: ListMarkers,
+  displayNameFallback?: (slug: string) => string,
+): RawRcSession[] {
+  const blocks = stdout.split(`${markers.session} `).slice(1);
+  return blocks.map((block) => {
+    // Match markers as whole lines (not substrings): an env value like
+    // `SHED_RC_DISPLAY_NAME=...:E` can't be mistaken for the env marker line,
+    // and the random nonce keeps pane text from matching either.
+    const lines = block.split('\n');
+    const tmuxSession = (lines[0] ?? '').trim();
+    const envAt = lines.indexOf(markers.env);
+    const paneAt = lines.indexOf(markers.pane);
+    const envDump =
+      envAt === -1 ? '' : lines.slice(envAt + 1, paneAt === -1 ? undefined : paneAt).join('\n');
+    const pane = paneAt === -1 ? '' : lines.slice(paneAt + 1).join('\n');
+
+    return parseRcSession({ tmuxSession, envDump, pane, displayNameFallback });
+  });
+}
+
+/**
+ * Single-SSH list-and-probe: fetches every rc-* session's metadata env and pane
+ * in one remote shell invocation so a page load doesn't pay N+1 SSH handshakes.
+ * One `show-environment` dump per session (filtered to SHED_RC_*) keeps it to a
+ * single tmux call per session even as the key set grows.
  *
- * Returns target-agnostic data; callers wrap with shed/machine identifiers
- * and a workdir default.
+ * Returns target-agnostic data; callers wrap with shed/machine identifiers and a
+ * workdir default.
  */
 export async function listRcSessions(opts: {
   target: CommandTarget;
-  /** Used when a tmux session has no SRA_DISPLAY_NAME stored (e.g. created
-   * before the env var was added). Receives the slug. */
+  /** Used when a tmux session has no SHED_RC_DISPLAY_NAME (e.g. a legacy or
+   * foreign rc-* session). Receives the slug. */
   displayNameFallback?: (slug: string) => string;
 }): Promise<RawRcSession[]> {
+  const markers = rcListMarkers(crypto.randomUUID());
   const script = `
 names=$(tmux ls -F '#{session_name}' 2>/dev/null | grep '^${RC_PREFIX}' || true)
 for n in $names; do
-  echo "${PANE_SEP}${PANE_SEP} $n"
-  echo "${NAME_SEP}$(tmux show-environment -t "$n" SRA_DISPLAY_NAME 2>/dev/null | sed -n 's/^SRA_DISPLAY_NAME=//p')"
-  echo "${KIND_SEP}$(tmux show-environment -t "$n" SRA_KIND 2>/dev/null | sed -n 's/^SRA_KIND=//p')"
-  echo "${WORKDIR_SEP}$(tmux show-environment -t "$n" SRA_WORKDIR 2>/dev/null | sed -n 's/^SRA_WORKDIR=//p')"
+  echo "${markers.session} $n"
+  echo "${markers.env}"
+  tmux show-environment -t "$n" 2>/dev/null | grep '^${ENV_PREFIX}' || true
+  echo "${markers.pane}"
   tmux capture-pane -t "$n" -p -S -200 2>/dev/null || true
 done
 `;
-  // Pipe the script via stdin instead of `bash -lc`. On shed images where
-  // the user has no controlling terminal, tmux invoked as a child of `bash
-  // -c` fails with "open terminal failed: not a terminal", but works when
-  // bash reads commands from stdin (the parent process layout differs).
+  // Pipe the script via stdin instead of `bash -lc`. On shed images where the
+  // user has no controlling terminal, tmux invoked as a child of `bash -c`
+  // fails with "open terminal failed: not a terminal", but works when bash
+  // reads commands from stdin (the parent process layout differs).
   const result = await run(opts.target, ['bash'], {
     stdin: script,
     timeoutMs: 8_000,
@@ -300,41 +560,7 @@ done
     throw new AppError('SSH_ERROR', `ssh ${cls}: ${result.stderr.trim()}`, 502);
   }
 
-  const sections = result.stdout.split(`${PANE_SEP}${PANE_SEP} `).slice(1);
-  return sections.map<RawRcSession>((section) => {
-    const lines = section.split('\n');
-    const tmuxSession = (lines[0] ?? '').trim();
-    const slug = tmuxSession.slice(RC_PREFIX.length);
-
-    let storedName = '';
-    let kind: RcKind = 'agent';
-    let storedWorkdir = '';
-    let paneStart = 1;
-    if (lines[paneStart]?.startsWith(NAME_SEP)) {
-      storedName = lines[paneStart].slice(NAME_SEP.length).trim();
-      paneStart += 1;
-    }
-    if (lines[paneStart]?.startsWith(KIND_SEP)) {
-      kind = parseKind(lines[paneStart].slice(KIND_SEP.length).trim());
-      paneStart += 1;
-    }
-    if (lines[paneStart]?.startsWith(WORKDIR_SEP)) {
-      storedWorkdir = lines[paneStart].slice(WORKDIR_SEP.length).trim();
-      paneStart += 1;
-    }
-
-    const pane = lines.slice(paneStart).join('\n');
-    const { state, url } = classifyPane(kind, pane);
-    return {
-      slug,
-      tmux_session: tmuxSession,
-      display_name: storedName || opts.displayNameFallback?.(slug) || slug,
-      workdir: storedWorkdir || undefined,
-      kind,
-      state,
-      url,
-    };
-  });
+  return parseListOutput(result.stdout, markers, opts.displayNameFallback);
 }
 
 export async function probeUntilReady(opts: {

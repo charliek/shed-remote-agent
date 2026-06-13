@@ -2,6 +2,8 @@
 
 A remote-control session is a detached tmux session running on an RC target. The backend identifies and probes them by tmux session-name prefix (`rc-`).
 
+The on-session metadata format (`SHED_RC_*` env vars) is a tool-neutral standard so that shed-remote-agent, shed-desktop, the `shed` CLI, and future clients can all discover and pick up each other's sessions. The wire details below are the reference implementation of that standard — see [RC Session Convention](rc-session-convention.md) for the normative spec.
+
 ## Targets
 
 Sessions are anchored to one of two target types. The wire shape is identical; only the dispatch differs.
@@ -31,9 +33,12 @@ On native machines (both SSH and local), `agent`/`repl` are wrapped in `bash -ic
 1. **Bootstrap**: The backend dispatches to the target (SSH or local spawn) and runs:
    ```bash
    tmux new-session -d -s rc-<slug> -c <workdir> \
-     -e SRA_DISPLAY_NAME=<display> -e SRA_KIND=<kind> -e SRA_WORKDIR=<workdir> \
+     -e SHED_RC_V=1 -e SHED_RC_ID=<uuid> \
+     -e SHED_RC_DISPLAY_NAME=<display> -e SHED_RC_KIND=<kind> -e SHED_RC_WORKDIR=<workdir> \
+     -e SHED_RC_CREATED_BY=shed-remote-agent/<version> -e SHED_RC_CREATED_AT=<rfc3339> \
      '<inner command>'
    ```
+   See [RC Session Convention](rc-session-convention.md) for the full key set and rules.
 2. **Probe**: The backend runs `tmux capture-pane -t rc-<slug> -p -S -200` and inspects the output with the regex table below.
 3. **Ready**: The pane has reached a `ready` (or other terminal) state for the configured kind.
 4. **Attach (optional)**: A browser opens a WebSocket to `/api/.../rc/<slug>/attach`. The backend spawns `tmux attach -t rc-<slug>` (over SSH for remote targets, direct for local) attached to a PTY and bridges bytes to the WebSocket.
@@ -92,7 +97,7 @@ SSH attach uses `ssh -tt -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAli
 
 Slug generation uses a confusable-free alphabet (`abcdefghjkmnpqrstuvwxyz23456789`) so a human reading the name back from a QR / URL doesn't confuse `0`/`O` or `1`/`l`.
 
-The bootstrap sets three tmux environment variables (`SRA_DISPLAY_NAME`, `SRA_KIND`, `SRA_WORKDIR`) so `listRcSessions` can recover the original metadata for sessions created in earlier UI flows.
+The bootstrap stamps the session's metadata into tmux session environment variables (`SHED_RC_V`, `SHED_RC_ID`, `SHED_RC_DISPLAY_NAME`, `SHED_RC_KIND`, `SHED_RC_WORKDIR`, `SHED_RC_CREATED_BY`, `SHED_RC_CREATED_AT`) so any tool — including `listRcSessions` here — can recover it. `rc-*` sessions without `SHED_RC_V` are treated as legacy/unmanaged: still listed and killable, but rendered with defaults (`kind=agent`, fallback display name, target-default workdir). See [RC Session Convention](rc-session-convention.md).
 
 ## Why tmux
 

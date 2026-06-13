@@ -1,12 +1,7 @@
-import {
-  createRcRequestSchema,
-  DEFAULT_RC_KIND,
-  type Machine,
-  type RcSession,
-} from '@shed-remote-agent/shared';
+import { createRcRequestSchema, DEFAULT_RC_KIND, type Machine } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
 import { machineCommandTarget, requireMachine } from '../lib/machineClients.js';
-import { bootstrap, kill, listRcSessions, probeUntilReady } from '../lib/rc.js';
+import { bootstrap, kill, listRcSessions, probeUntilReady, toRcSession } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
 
 const machineRc = new Hono();
@@ -26,18 +21,12 @@ machineRc.get('/:machine/rc', async (c) => {
     target: machineCommandTarget(m),
     displayNameFallback: machineDisplayFallback(m),
   });
-  const sessions: RcSession[] = raw.map((r) => ({
-    slug: r.slug,
-    tmux_session: r.tmux_session,
-    display_name: r.display_name,
-    // Prefer the workdir we stored at bootstrap; fall back to the
-    // machine default for sessions created before SRA_WORKDIR was added.
-    workdir: r.workdir ?? defaultWorkdir(m),
-    kind: r.kind,
-    state: r.state,
-    url: r.url,
-    target: { kind: 'machine', machine_name: m.name },
-  }));
+  const sessions = raw.map((r) =>
+    toRcSession(r, {
+      target: { kind: 'machine', machine_name: m.name },
+      defaultWorkdir: defaultWorkdir(m),
+    }),
+  );
   return c.json({ rc_sessions: sessions });
 });
 
@@ -48,28 +37,37 @@ machineRc.post('/:machine/rc', async (c) => {
   const kind = body.kind ?? DEFAULT_RC_KIND;
 
   const target = machineCommandTarget(m);
-  const { slug, tmuxSession, displayName, workdir } = await bootstrap({
+  const targetLabel = `machine:${m.name}`;
+  const { slug, tmuxSession, displayName, workdir, id, createdBy, createdAt } = await bootstrap({
     target,
     slug: body.slug,
     displayName: body.display_name,
     displayNameFallback: machineDisplayFallback(m),
     workdir: body.workdir ?? defaultWorkdir(m),
     kind,
+    targetLabel,
     interactiveShell: true,
   });
 
   const state = await probeUntilReady({ target, slug, kind });
 
-  const session: RcSession = {
-    slug,
-    tmux_session: tmuxSession,
-    display_name: displayName,
-    workdir,
-    kind,
-    state: state.state,
-    url: state.url,
-    target: { kind: 'machine', machine_name: m.name },
-  };
+  const session = toRcSession(
+    {
+      slug,
+      tmux_session: tmuxSession,
+      display_name: displayName,
+      workdir,
+      kind,
+      state: state.state,
+      url: state.url,
+      id,
+      created_by: createdBy,
+      created_at: createdAt,
+      target_label: targetLabel,
+      managed: true,
+    },
+    { target: { kind: 'machine', machine_name: m.name }, defaultWorkdir: workdir },
+  );
   return c.json(session, 201);
 });
 
