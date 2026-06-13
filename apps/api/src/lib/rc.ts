@@ -149,9 +149,9 @@ function normalizeCreatedAt(raw: string | undefined): string | undefined {
  * one we know is still managed (forward-compat): we render the fields we
  * understand and never drop the session. */
 function isManagedVersion(raw: string | undefined): boolean {
-  if (raw === undefined) return false;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 1;
+  // Strictly a canonical positive integer — reject exotic numeric spellings
+  // (1e3, 0x1, 1.0, +1) so foreign/hostile input matches the spec's grammar.
+  return raw !== undefined && /^\d+$/.test(raw) && Number(raw) >= 1;
 }
 
 /** tmux refuses to create a session whose name already exists. A caller-supplied

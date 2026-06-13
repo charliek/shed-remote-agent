@@ -160,6 +160,17 @@ describe('parseRcSession — legacy / malformed / forward-compat', () => {
     expect(r.id).toBeUndefined(); // not the stray id
   });
 
+  it('treats non-canonical version spellings (1.0, 1e3) as legacy', () => {
+    for (const v of ['1.0', '1e3', '0x1', '0', '']) {
+      const r = parseRcSession({
+        tmuxSession: 'rc-x',
+        envDump: renderDump([['SHED_RC_V', v]]),
+        pane: '',
+      });
+      expect(r.managed).toBe(false);
+    }
+  });
+
   it('keeps a higher (future) SHED_RC_V as managed and ignores unknown keys', () => {
     const env = renderDump([
       ['SHED_RC_V', '2'],
