@@ -44,16 +44,16 @@ export function RcKindPicker({
   const current = visible.find((o) => o.value === value);
   return (
     <div className="space-y-1.5">
-      <div className="flex gap-2 rounded-md border border-border bg-background p-1">
+      <div className="flex gap-1 rounded-xl border border-border bg-secondary p-1">
         {visible.map((opt) => (
           <button
             key={opt.value}
             type="button"
             disabled={disabled}
             onClick={() => onChange(opt.value)}
-            className={`flex-1 rounded px-3 py-1.5 font-medium text-sm transition-colors disabled:opacity-50 ${
+            className={`flex-1 rounded-lg px-3 py-1.5 font-semibold text-sm transition-all disabled:opacity-50 ${
               value === opt.value
-                ? 'bg-primary text-primary-foreground'
+                ? 'bg-primary text-primary-foreground shadow-[0_2px_8px_hsl(var(--primary)/0.3)]'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >

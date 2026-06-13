@@ -4,48 +4,72 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    /* Terracotta — warm earth-tone palette (light) */
+    --background: 40 44% 96%;
+    --foreground: 28 18% 16%;
+    --card: 40 60% 99%;
+    --card-foreground: 28 18% 16%;
+    --popover: 40 60% 99%;
+    --popover-foreground: 28 18% 16%;
+    --primary: 14 58% 48%;
+    --primary-foreground: 40 56% 98%;
+    --primary-soft: 16 64% 95%;
+    --secondary: 38 38% 96%;
+    --secondary-foreground: 28 18% 16%;
+    --muted: 38 38% 96%;
+    --muted-foreground: 30 10% 44%;
+    --accent: 38 36% 93%;
+    --accent-foreground: 28 18% 16%;
+    --destructive: 8 58% 48%;
+    --destructive-foreground: 40 56% 98%;
+    --border: 34 24% 88%;
+    --border-strong: 32 20% 82%;
+    --input: 34 24% 88%;
+    --ring: 14 58% 48%;
+
+    /* extended semantic tones */
+    --surface-2: 38 38% 96%;
+    --faint: 32 13% 59%;
+    --sage: 96 30% 36%;
+    --sage-soft: 96 30% 91%;
+    --ochre: 34 64% 44%;
+    --ochre-soft: 36 70% 92%;
+    --shadow: 28 30% 28%;
+
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    /* Terracotta — warm earth-tone palette (dark / espresso) */
+    --background: 26 16% 9%;
+    --foreground: 38 34% 91%;
+    --card: 28 15% 12%;
+    --card-foreground: 38 34% 91%;
+    --popover: 28 15% 12%;
+    --popover-foreground: 38 34% 91%;
+    --primary: 16 74% 61%;
+    --primary-foreground: 26 32% 11%;
+    --primary-soft: 16 38% 17%;
+    --secondary: 28 14% 16%;
+    --secondary-foreground: 38 34% 91%;
+    --muted: 28 14% 16%;
+    --muted-foreground: 32 14% 64%;
+    --accent: 28 14% 18%;
+    --accent-foreground: 38 34% 91%;
+    --destructive: 8 64% 56%;
+    --destructive-foreground: 40 56% 97%;
+    --border: 30 13% 20%;
+    --border-strong: 30 12% 27%;
+    --input: 30 13% 22%;
+    --ring: 16 74% 61%;
+
+    --surface-2: 28 14% 16%;
+    --faint: 30 12% 50%;
+    --sage: 96 36% 64%;
+    --sage-soft: 100 18% 17%;
+    --ochre: 38 72% 62%;
+    --ochre-soft: 36 40% 17%;
+    --shadow: 0 0% 0%;
   }
 }
 
@@ -53,7 +77,57 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
   body {
     @apply bg-background text-foreground;
+    font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(110% 70% at 88% -8%, hsl(var(--primary) / 0.09), transparent 64%),
+      radial-gradient(80% 55% at -6% 106%, hsl(var(--sage) / 0.06), transparent 60%);
+    background-attachment: fixed;
+  }
+}
+
+/* Entrance + status animations (referenced via utility classes below) */
+@keyframes shed-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shed-pulse {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--sage) / 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 6px hsl(var(--sage) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--sage) / 0);
+  }
+}
+
+@layer utilities {
+  .animate-rise {
+    animation: shed-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .pulse-dot {
+    animation: shed-pulse 2s infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-rise,
+    .pulse-dot {
+      animation: none;
+    }
   }
 }

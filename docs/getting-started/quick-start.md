@@ -23,7 +23,7 @@ Hit **Create shed**. You'll see a progress stream — upstream `shed-server` SSE
 
 ## 3. Bootstrap on an existing shed
 
-If you skipped "Start remote-control on create", open the new shed from the list. The detail page shows status + origin + the empty RC sessions panel. Tap **+ New** under *Remote-control sessions*.
+If you skipped "Start remote-control on create", open the new shed from the list. The detail page shows status + origin + the empty RC sessions panel. Tap **+ New session** to reveal the creation form.
 
 Pick a session **kind** — the default is `repl`:
 
@@ -43,7 +43,7 @@ If you'd rather paste the URL somewhere else, tap **Copy URL**.
 
 ## 5. Attach in the browser
 
-Tap **Attach** on the session card to open the in-browser terminal. xterm.js streams bytes bidirectionally over a WebSocket; resize, copy/paste, and keep-alive are all handled. This is the same view you'd get from `tmux attach -t rc-<slug>` on the target, with the same persistence — close the tab and the session keeps running.
+Tap **Terminal** on the session card to open the in-browser terminal. xterm.js streams bytes bidirectionally over a WebSocket; resize, copy/paste, and keep-alive are all handled. This is the same view you'd get from `tmux attach -t rc-<slug>` on the target, with the same persistence — close the tab and the session keeps running.
 
 ## 6. Kill when done
 
@@ -68,7 +68,7 @@ machines:
     workdir: /Users/charliek/projects
 ```
 
-After editing, machines show up on the sheds page under a **Machines** section. Tap one to open the same RC panel you get on sheds — `+ New`, kind picker, attach, kill all work the same way. The only difference is the target: SSH machines tunnel through `ssh user@host:port`; local machines spawn tmux directly on the orchestrator. See [Config Schema → Machines](../reference/config-schema.md#machines) for the full shape.
+After editing, machines show up on the sheds page under a **Machines** section. Tap one to open the same RC panel you get on sheds — **+ New session**, kind picker, attach, kill all work the same way. The only difference is the target: SSH machines tunnel through `ssh user@host:port`; local machines spawn tmux directly on the orchestrator. See [Config Schema → Machines](../reference/config-schema.md#machines) for the full shape.
 
 ## Troubleshooting
 

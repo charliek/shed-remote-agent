@@ -129,7 +129,7 @@ export default function NewShedPage() {
         {hosts.data && hosts.data.hosts.length > 1 && (
           <Field label="Host">
             <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm"
               value={effectiveHost}
               onChange={(e) => setHost(e.target.value)}
             >
@@ -151,13 +151,13 @@ export default function NewShedPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="my-shed"
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </Field>
 
         <Field label="Image">
           <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm"
             value={image}
             onChange={(e) => setImage(e.target.value)}
           >
@@ -171,15 +171,15 @@ export default function NewShedPage() {
         </Field>
 
         <Field label="Source">
-          <div className="flex gap-2 rounded-md border border-border bg-background p-1">
+          <div className="flex gap-1 rounded-xl border border-border bg-secondary p-1">
             {(['none', 'repo', 'local-dir'] as const).map((k) => (
               <button
                 key={k}
                 type="button"
                 onClick={() => setSource(k)}
-                className={`flex-1 rounded px-3 py-1.5 font-medium text-sm transition-colors ${
+                className={`flex-1 rounded-lg px-3 py-1.5 font-semibold text-sm transition-all ${
                   source === k
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-primary text-primary-foreground shadow-[0_2px_8px_hsl(var(--primary)/0.3)]'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -232,7 +232,7 @@ export default function NewShedPage() {
                   onChange={(e) => setRcDisplayName(e.target.value)}
                   placeholder={`${name.trim() || 'shed-name'}/<slug>`}
                   maxLength={100}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </Field>
             </>
@@ -256,7 +256,7 @@ export default function NewShedPage() {
           <ol className="space-y-1 text-sm">
             {progress.map((p) => (
               <li key={p.id} className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage" />
                 <div>
                   <span className="font-mono text-muted-foreground text-xs">{p.phase}</span>{' '}
                   <span>{p.message}</span>
@@ -276,7 +276,7 @@ export default function NewShedPage() {
               </li>
             )}
             {completed && (
-              <li className="flex items-center gap-2 text-emerald-600 dark:text-emerald-500">
+              <li className="flex items-center gap-2 text-sage">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 done
               </li>

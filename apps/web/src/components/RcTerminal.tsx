@@ -125,11 +125,11 @@ export function RcTerminal({ target, slug }: RcTerminalProps) {
       fontFamily:
         'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: 13,
-      // 256-color theme that reads well in light & dark
+      // Warm espresso theme matching the app's dark palette
       theme: {
-        background: '#0b0d12',
-        foreground: '#d6deeb',
-        cursor: '#d6deeb',
+        background: '#1b1713',
+        foreground: '#f0e9df',
+        cursor: '#e0916b',
       },
       scrollback: 5000,
       allowProposedApi: true,
@@ -251,12 +251,12 @@ export function RcTerminal({ target, slug }: RcTerminalProps) {
   }, [target, slug, reconnectKey, sendResize, fitAndMaybeResize, setCtrl]);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col bg-[#0b0d12]">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col bg-[#1b1713]">
       <div ref={containerRef} className="min-h-0 flex-1 [&_.xterm]:h-full [&_.xterm]:p-2" />
       <TerminalKeys onSend={sendInput} ctrlArmed={ctrlArmed} onToggleCtrl={toggleCtrl} />
       {state !== 'connected' && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3">
-          <div className="pointer-events-auto rounded-md bg-zinc-800/90 px-3 py-2 text-xs text-zinc-100 shadow">
+          <div className="pointer-events-auto rounded-lg bg-[#33291f]/95 px-3 py-2 text-[#f0e9df] text-xs shadow-lg">
             {state === 'connecting' ? (
               <span>Connecting…</span>
             ) : (
@@ -264,7 +264,7 @@ export function RcTerminal({ target, slug }: RcTerminalProps) {
                 <span>{reason ?? 'Disconnected'}</span>
                 <button
                   type="button"
-                  className="rounded bg-zinc-700 px-2 py-0.5 hover:bg-zinc-600"
+                  className="rounded bg-[#4a3c2e] px-2 py-0.5 hover:bg-[#5a4a38]"
                   data-testid={RECONNECT_KEY}
                   onClick={() => setReconnectKey((k) => k + 1)}
                 >

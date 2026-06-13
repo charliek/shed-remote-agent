@@ -15,7 +15,7 @@ export function FilterInput({
     <div className="relative">
       <Search
         aria-hidden="true"
-        className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+        className="absolute top-1/2 left-3.5 h-[18px] w-[18px] -translate-y-1/2 text-faint"
       />
       <input
         type="text"
@@ -24,7 +24,7 @@ export function FilterInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={ariaLabel}
-        className="h-10 w-full rounded-md border border-input bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-11 w-full rounded-xl border border-border bg-card pr-3 pl-10 text-foreground text-sm outline-none transition placeholder:text-faint focus-visible:border-primary/55 focus-visible:ring-4 focus-visible:ring-primary/10"
       />
     </div>
   );

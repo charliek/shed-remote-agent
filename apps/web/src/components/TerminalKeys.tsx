@@ -41,14 +41,16 @@ const ROW: KeyDef[] = [
 
 export function TerminalKeys({ onSend, ctrlArmed, onToggleCtrl }: TerminalKeysProps) {
   return (
-    <div className="flex shrink-0 gap-1 overflow-x-auto border-zinc-800 border-t bg-[#0b0d12] px-2 py-1.5 text-zinc-200 [-webkit-overflow-scrolling:touch]">
+    <div className="flex shrink-0 gap-1 overflow-x-auto border-[#33291f] border-t bg-[#1b1713] px-2 py-1.5 text-[#e8ddcd] [-webkit-overflow-scrolling:touch]">
       <button
         type="button"
         aria-pressed={ctrlArmed}
         onMouseDown={(e) => e.preventDefault()}
         onClick={onToggleCtrl}
         className={`shrink-0 rounded px-2.5 py-1.5 font-mono text-xs transition-colors ${
-          ctrlArmed ? 'bg-amber-500 text-zinc-900' : 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700'
+          ctrlArmed
+            ? 'bg-[#e0916b] text-[#1b1713]'
+            : 'bg-[#33291f] text-[#f0e9df] hover:bg-[#44382c]'
         }`}
       >
         Ctrl{ctrlArmed ? ' •' : ''}
@@ -64,7 +66,7 @@ export function TerminalKeys({ onSend, ctrlArmed, onToggleCtrl }: TerminalKeysPr
             e.preventDefault();
           }}
           onClick={() => onSend(k.bytes)}
-          className={`shrink-0 rounded bg-zinc-800 px-2.5 py-1.5 font-mono text-xs text-zinc-100 transition-colors hover:bg-zinc-700 ${
+          className={`shrink-0 rounded bg-[#33291f] px-2.5 py-1.5 font-mono text-[#f0e9df] text-xs transition-colors hover:bg-[#44382c] ${
             k.wide ? 'min-w-12' : ''
           }`}
         >
