@@ -1,9 +1,4 @@
-import {
-  createRcRequestSchema,
-  DEFAULT_RC_KIND,
-  type Host,
-  type RcSession,
-} from '@shed-remote-agent/shared';
+import { createRcRequestSchema, DEFAULT_RC_KIND, type Host } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
 import { clientFor, clientForName } from '../lib/hostClients.js';
 import {
@@ -13,6 +8,7 @@ import {
   listRcSessions,
   probeUntilReady,
   RC_PREFIX,
+  toRcSession,
 } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
 import type { CommandTarget } from '../lib/ssh.js';
@@ -34,18 +30,12 @@ rc.get('/:host/:name/rc', async (c) => {
     target: shedCommandTarget(h, name),
     displayNameFallback: shedDisplayFallback(name),
   });
-  const sessions: RcSession[] = raw.map((r) => ({
-    slug: r.slug,
-    tmux_session: r.tmux_session,
-    display_name: r.display_name,
-    // Prefer the workdir we stored at bootstrap; fall back to the shed
-    // default for sessions created before SRA_WORKDIR was added.
-    workdir: r.workdir ?? DEFAULT_WORKDIR,
-    kind: r.kind,
-    state: r.state,
-    url: r.url,
-    target: { kind: 'shed', shed_name: name, host: host },
-  }));
+  const sessions = raw.map((r) =>
+    toRcSession(r, {
+      target: { kind: 'shed', shed_name: name, host },
+      defaultWorkdir: DEFAULT_WORKDIR,
+    }),
+  );
   return c.json({ rc_sessions: sessions });
 });
 
@@ -60,27 +50,36 @@ rc.post('/:host/:name/rc', async (c) => {
   await clientFor(h).getShed(name);
 
   const target = shedCommandTarget(h, name);
-  const { slug, tmuxSession, displayName, workdir } = await bootstrap({
+  const targetLabel = `shed:${name}@${host}`;
+  const { slug, tmuxSession, displayName, workdir, id, createdBy, createdAt } = await bootstrap({
     target,
     slug: body.slug,
     displayName: body.display_name,
     displayNameFallback: shedDisplayFallback(name),
     workdir: body.workdir,
     kind,
+    targetLabel,
   });
 
   const state = await probeUntilReady({ target, slug, kind });
 
-  const session: RcSession = {
-    slug,
-    tmux_session: tmuxSession,
-    display_name: displayName,
-    workdir,
-    kind,
-    state: state.state,
-    url: state.url,
-    target: { kind: 'shed', shed_name: name, host: host },
-  };
+  const session = toRcSession(
+    {
+      slug,
+      tmux_session: tmuxSession,
+      display_name: displayName,
+      workdir,
+      kind,
+      state: state.state,
+      url: state.url,
+      id,
+      created_by: createdBy,
+      created_at: createdAt,
+      target_label: targetLabel,
+      managed: true,
+    },
+    { target: { kind: 'shed', shed_name: name, host }, defaultWorkdir: workdir },
+  );
   return c.json(session, 201);
 });
 
