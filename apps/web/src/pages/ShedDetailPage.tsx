@@ -88,6 +88,14 @@ export default function ShedDetailPage() {
   useEffect(() => {
     if (showNewSession) nameInputRef.current?.focus();
   }, [showNewSession]);
+  // Reset the inline create form when the route switches to a different shed —
+  // react-router reuses this component instance across :host/:name changes, so
+  // without this an open form / typed name would leak across navigations.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only on route change; setters are stable
+  useEffect(() => {
+    setShowNewSession(false);
+    setDisplayName('');
+  }, [host, name]);
   const newRcM = useMutation({
     mutationFn: () =>
       api.createRcSession(host, name, {

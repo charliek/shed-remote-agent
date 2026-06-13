@@ -43,7 +43,7 @@ If you'd rather paste the URL somewhere else, tap **Copy URL**.
 
 ## 5. Attach in the browser
 
-Tap **Attach** on the session card to open the in-browser terminal. xterm.js streams bytes bidirectionally over a WebSocket; resize, copy/paste, and keep-alive are all handled. This is the same view you'd get from `tmux attach -t rc-<slug>` on the target, with the same persistence — close the tab and the session keeps running.
+Tap **Terminal** on the session card to open the in-browser terminal. xterm.js streams bytes bidirectionally over a WebSocket; resize, copy/paste, and keep-alive are all handled. This is the same view you'd get from `tmux attach -t rc-<slug>` on the target, with the same persistence — close the tab and the session keeps running.
 
 ## 6. Kill when done
 

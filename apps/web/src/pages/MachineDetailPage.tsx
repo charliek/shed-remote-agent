@@ -48,6 +48,13 @@ export default function MachineDetailPage() {
   useEffect(() => {
     if (showNewSession) nameInputRef.current?.focus();
   }, [showNewSession]);
+  // Reset the inline create form when the route switches to a different machine
+  // (the component instance is reused across :machine changes).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only on route change; setters are stable
+  useEffect(() => {
+    setShowNewSession(false);
+    setDisplayName('');
+  }, [machine]);
 
   // Default workdir to the configured machine.workdir whenever the route
   // changes machines (the page component instance is re-used by react-router

@@ -5,8 +5,15 @@ import { Toaster } from 'sonner';
 import App from './App';
 import { ErrorBoundary } from './components/error-boundary';
 import { queryClient } from './lib/query-client';
-import { ThemeProvider } from './lib/theme';
+import { ThemeProvider, useTheme } from './lib/theme';
 import './index.css';
+
+// Lives inside ThemeProvider so toasts track the app's (explicit) theme rather
+// than the OS, which can disagree after a manual toggle.
+function AppToaster() {
+  const { theme } = useTheme();
+  return <Toaster theme={theme} toastOptions={{ className: 'font-sans' }} />;
+}
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element not found');
@@ -17,7 +24,7 @@ ReactDOM.createRoot(rootEl).render(
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
           <App />
-          <Toaster theme="system" toastOptions={{ className: 'font-sans' }} />
+          <AppToaster />
         </QueryClientProvider>
       </ThemeProvider>
     </ErrorBoundary>
