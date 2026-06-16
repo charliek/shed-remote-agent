@@ -97,4 +97,3 @@ no token and continue to work against secure hosts.
 
 These messages are deliberately generic — they never echo the token or the
 fingerprints, and secret-bearing log fields are redacted as defense-in-depth.
-</content>
