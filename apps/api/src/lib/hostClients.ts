@@ -1,7 +1,8 @@
 import type { Host } from '@shed-remote-agent/shared';
 import { getServerTarget } from './configStore.js';
+import { ControlTokenProvider } from './controlToken.js';
 import { AppError } from './errors.js';
-import { ShedClient, type TokenSource } from './shedClient.js';
+import { ShedClient } from './shedClient.js';
 import type { ServerTarget } from './shedConfig.js';
 
 interface CachedClient {
@@ -11,33 +12,30 @@ interface CachedClient {
 }
 
 const clients = new Map<string, CachedClient>();
+// Token providers persist per host (independent of client rebuilds) so an
+// in-memory minted token survives a transport-identity change. Each re-reads
+// the 5s-memoized config itself, so it always sees the current target.
+const providers = new Map<string, ControlTokenProvider>();
 
 /** Immutable transport identity — a change (e.g. open↔secure) evicts the client. */
 function identity(t: ServerTarget): string {
   return `${t.name}|${t.baseUrl}|${t.sshPort}|${t.tlsCertFingerprint ?? ''}`;
 }
 
-/**
- * Token source backed by the config seed: re-reads the 5s-memoized config each
- * call (so a token the `shed` CLI refreshes on disk is picked up) and never
- * captures a token in the client. The minting provider replaces this later.
- */
-function seedTokenSource(name: string): TokenSource {
-  return {
-    async get() {
-      return (await getServerTarget(name))?.controlToken;
-    },
-    invalidate() {
-      // No in-memory token to drop without the provider; a 401 surfaces directly.
-    },
-  };
+function providerFor(name: string): ControlTokenProvider {
+  let provider = providers.get(name);
+  if (!provider) {
+    provider = new ControlTokenProvider(name);
+    providers.set(name, provider);
+  }
+  return provider;
 }
 
 export function clientFor(target: ServerTarget): ShedClient {
   const id = identity(target);
   const cached = clients.get(target.name);
   if (cached && cached.id === id) return cached.client;
-  const client = new ShedClient(target, seedTokenSource(target.name));
+  const client = new ShedClient(target, providerFor(target.name));
   clients.set(target.name, { id, client });
   return client;
 }

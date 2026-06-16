@@ -100,7 +100,7 @@ export class ShedClient {
     path: string,
     body: unknown,
     token: string | undefined,
-    accept?: string,
+    opts: { accept?: string; idleTimeoutMs?: number; signal?: AbortSignal },
   ): Promise<SecureResponse> {
     return secureRequest({
       host: this.secureHost,
@@ -109,36 +109,54 @@ export class ShedClient {
       method,
       path,
       token,
-      accept,
+      accept: opts.accept,
       body: body != null ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      idleTimeoutMs: opts.idleTimeoutMs,
+      signal: opts.signal,
     });
+  }
+
+  /**
+   * Resolve a token, send the request, and on a 401 invalidate the token + retry
+   * once with a freshly minted one. Any 401 response body is drained here so a
+   * pinned socket never dangles; the returned response is either non-401 (body
+   * live) or a 401 (body already cancelled).
+   */
+  private async sendSecure(
+    method: string,
+    path: string,
+    body: unknown,
+    opts: { accept?: string; idleTimeoutMs?: number; signal?: AbortSignal },
+  ): Promise<SecureResponse> {
+    const token = await this.tokens.get();
+    let res = await this.doSecure(method, path, body, token, opts);
+    if (res.status === 401) {
+      // Always drain the 401 body — the caller maps it to authExpired without
+      // reading it, so an un-cancelled pinned socket would otherwise dangle.
+      await res.body.cancel().catch(() => {});
+      if (token) {
+        this.tokens.invalidate(token);
+        const next = await this.tokens.get();
+        if (next && next !== token) {
+          res = await this.doSecure(method, path, body, next, opts);
+          if (res.status === 401) await res.body.cancel().catch(() => {});
+        }
+      }
+    }
+    return res;
   }
 
   private async secureRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: SecureResponse;
     try {
-      const token = await this.tokens.get();
-      res = await this.doSecure(method, path, body, token);
-      if (res.status === 401) {
-        await res.body.cancel();
-        // Stale token: invalidate + retry once with a freshly resolved token.
-        if (token) {
-          this.tokens.invalidate(token);
-          const next = await this.tokens.get();
-          if (next && next !== token) {
-            res = await this.doSecure(method, path, body, next);
-            // A second 401's body is never read below — drain it so the socket
-            // is released rather than left dangling.
-            if (res.status === 401) await res.body.cancel().catch(() => {});
-          }
-        }
-        if (res.status === 401) throw AppError.authExpired();
-      }
+      res = await this.sendSecure(method, path, body, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
     } catch (err) {
       throw upstreamTransportError(err, method, path);
     }
 
+    if (res.status === 401) throw AppError.authExpired();
     if (res.status === 204) {
       await res.body.cancel();
       return undefined as T;
@@ -227,16 +245,10 @@ export class ShedClient {
   private async *secureCreateStream(req: CreateShedRequest): AsyncGenerator<ShedCreateEvent> {
     let res: SecureResponse;
     try {
-      const token = await this.tokens.get();
-      res = await secureRequest({
-        host: this.secureHost,
-        port: this.securePort,
-        fingerprint: this.target.tlsCertFingerprint ?? '',
-        method: 'POST',
-        path: '/api/sheds',
-        token,
+      // No overall signal: create can stream for minutes, so it's bounded by the
+      // idle timeout instead. sendSecure does the 401 invalidate+retry-once.
+      res = await this.sendSecure('POST', '/api/sheds', req, {
         accept: 'text/event-stream',
-        body: JSON.stringify(req),
         idleTimeoutMs: SSE_IDLE_TIMEOUT_MS,
       });
     } catch (err) {
@@ -248,8 +260,7 @@ export class ShedClient {
     if (res.status < 200 || res.status >= 300) {
       let error: APIError['error'];
       if (res.status === 401) {
-        // The 401 body isn't streamed — drain it so the socket is released.
-        await res.body.cancel().catch(() => {});
+        // sendSecure already drained the 401 body.
         const e = AppError.authExpired();
         error = { code: e.code, message: e.message };
       } else {
