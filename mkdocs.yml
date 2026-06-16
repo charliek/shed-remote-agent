@@ -95,6 +95,7 @@ nav:
       - HTTP API: reference/http-api.md
       - Remote Control: reference/remote-control.md
       - RC Session Convention: reference/rc-session-convention.md
+      - Secure Sheds (TLS + auth): reference/secure-sheds.md
       - Config Schema: reference/config-schema.md
   - Development:
       - Setup: development/setup.md

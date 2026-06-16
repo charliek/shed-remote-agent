@@ -1,6 +1,6 @@
 import type { Machine, ShedWithHost } from '@shed-remote-agent/shared';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ChevronRight, Plus } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Plus, ShieldCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FilterInput } from '@/components/FilterInput';
@@ -52,6 +52,8 @@ export default function ShedsPage() {
   const runningCount = allSheds.filter((s) => s.status.toLowerCase() === 'running').length;
   const stoppedCount = allSheds.length - runningCount;
   const hostCount = hosts.data?.hosts.length ?? new Set(allSheds.map((s) => s.host)).size;
+  // Names of hosts reached over TLS + a bearer token, for the "secure" row badge.
+  const secureHosts = new Set((hosts.data?.hosts ?? []).filter((h) => h.secure).map((h) => h.name));
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -155,7 +157,12 @@ export default function ShedsPage() {
           <SectionLabel count={filtered.length}>Sheds</SectionLabel>
           <Panel>
             {filtered.map((s, i) => (
-              <ShedRow key={`${s.host}/${s.name}`} shed={s} index={i} />
+              <ShedRow
+                key={`${s.host}/${s.name}`}
+                shed={s}
+                index={i}
+                secure={secureHosts.has(s.host)}
+              />
             ))}
           </Panel>
         </>
@@ -184,7 +191,7 @@ function Chevron() {
   );
 }
 
-function ShedRow({ shed, index }: { shed: ShedWithHost; index: number }) {
+function ShedRow({ shed, index, secure }: { shed: ShedWithHost; index: number; secure?: boolean }) {
   const running = shed.status.toLowerCase() === 'running';
   const source = shed.repo
     ? shed.repo
@@ -209,7 +216,10 @@ function ShedRow({ shed, index }: { shed: ShedWithHost; index: number }) {
       <div className="min-w-0">
         <div className="truncate font-bold text-[17px] tracking-tight">{shed.name}</div>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-          <span className="inline-flex items-center rounded-md border border-border bg-secondary px-2 py-0.5 font-semibold text-muted-foreground text-xs">
+          <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-0.5 font-semibold text-muted-foreground text-xs">
+            {secure && (
+              <ShieldCheck className="h-3 w-3 text-sage" aria-label="secure (TLS + token)" />
+            )}
             {shed.host}
           </span>
           {shed.backend && <span className="font-mono text-faint text-xs">{shed.backend}</span>}

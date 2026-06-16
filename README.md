@@ -22,6 +22,9 @@ Designed to live behind Tailscale — there is no auth layer.
   `claude.ai/code/session_...` URL with Copy/Open buttons
 - Surfaces actionable states: `starting`, `ready`, `reconnecting`, `needs-trust`,
   `needs-auth`, `dead`
+- Talks to **secure sheds** (shed `v0.7+`) transparently: pinned-TLS HTTPS with a
+  self-signed cert + a bearer control token it mints/refreshes over SSH, alongside
+  legacy plain-HTTP sheds — see [secure sheds](./docs/reference/secure-sheds.md)
 - Light and dark themes — follows your OS by default, with a one-tap toggle
 
 ## Stack
