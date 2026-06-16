@@ -1,30 +1,59 @@
 import type { Host } from '@shed-remote-agent/shared';
-import { getHost } from './configStore.js';
+import { getServerTarget } from './configStore.js';
 import { AppError } from './errors.js';
-import { ShedClient } from './shedClient.js';
+import { ShedClient, type TokenSource } from './shedClient.js';
+import type { ServerTarget } from './shedConfig.js';
 
-const clients = new Map<string, ShedClient>();
-
-function key(h: Host) {
-  return `${h.name}|${h.host}|${h.httpPort}`;
+interface CachedClient {
+  /** Identity of the target the cached client was built for; rebuilt on change. */
+  id: string;
+  client: ShedClient;
 }
 
-export function clientFor(host: Host): ShedClient {
-  const k = key(host);
-  const existing = clients.get(k);
-  if (existing) return existing;
-  const created = new ShedClient(host);
-  clients.set(k, created);
-  return created;
+const clients = new Map<string, CachedClient>();
+
+/** Immutable transport identity — a change (e.g. open↔secure) evicts the client. */
+function identity(t: ServerTarget): string {
+  return `${t.name}|${t.baseUrl}|${t.sshPort}|${t.tlsCertFingerprint ?? ''}`;
 }
 
-export async function requireHost(name: string): Promise<Host> {
-  const host = await getHost(name);
-  if (!host) throw AppError.notFound(`host '${name}' not found in shed config`);
-  return host;
+/**
+ * Token source backed by the config seed: re-reads the 5s-memoized config each
+ * call (so a token the `shed` CLI refreshes on disk is picked up) and never
+ * captures a token in the client. The minting provider replaces this later.
+ */
+function seedTokenSource(name: string): TokenSource {
+  return {
+    async get() {
+      return (await getServerTarget(name))?.controlToken;
+    },
+    invalidate() {
+      // No in-memory token to drop without the provider; a 401 surfaces directly.
+    },
+  };
+}
+
+export function clientFor(target: ServerTarget): ShedClient {
+  const id = identity(target);
+  const cached = clients.get(target.name);
+  if (cached && cached.id === id) return cached.client;
+  const client = new ShedClient(target, seedTokenSource(target.name));
+  clients.set(target.name, { id, client });
+  return client;
+}
+
+export async function requireServerTarget(name: string): Promise<ServerTarget> {
+  const target = await getServerTarget(name);
+  if (!target) throw AppError.notFound(`host '${name}' not found in shed config`);
+  return target;
+}
+
+/** Wire-safe Host (no secrets) derived from a target, for the SSH-path callers. */
+function hostFromTarget(t: ServerTarget): Host {
+  return { name: t.name, host: t.host, httpPort: t.httpPort, sshPort: t.sshPort, secure: t.secure };
 }
 
 export async function clientForName(name: string): Promise<{ host: Host; client: ShedClient }> {
-  const host = await requireHost(name);
-  return { host, client: clientFor(host) };
+  const target = await requireServerTarget(name);
+  return { host: hostFromTarget(target), client: clientFor(target) };
 }

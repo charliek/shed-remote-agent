@@ -1,6 +1,6 @@
 import { createRcRequestSchema, DEFAULT_RC_KIND, type Host } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
-import { clientFor, clientForName } from '../lib/hostClients.js';
+import { clientForName } from '../lib/hostClients.js';
 import {
   bootstrap,
   DEFAULT_WORKDIR,
@@ -41,13 +41,13 @@ rc.get('/:host/:name/rc', async (c) => {
 
 rc.post('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
-  const { host: h } = await clientForName(host);
+  const { host: h, client } = await clientForName(host);
   const body = createRcRequestSchema.parse(await parseJsonBody(c));
   const kind = body.kind ?? DEFAULT_RC_KIND;
 
   // Fail fast with a proper 404 if the shed doesn't exist, before paying an
   // SSH round-trip that would surface as a generic 500.
-  await clientFor(h).getShed(name);
+  await client.getShed(name);
 
   const target = shedCommandTarget(h, name);
   const targetLabel = `shed:${name}@${host}`;

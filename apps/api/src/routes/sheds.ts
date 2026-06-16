@@ -1,7 +1,7 @@
 import { createShedRequestSchema, type ShedWithHost } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { getHosts } from '../lib/configStore.js';
+import { getServerTargets } from '../lib/configStore.js';
 import { AppError } from '../lib/errors.js';
 import { clientFor, clientForName } from '../lib/hostClients.js';
 import { RC_PREFIX } from '../lib/rc.js';
@@ -10,25 +10,27 @@ import { parseJsonBody } from '../lib/requestBody.js';
 const sheds = new Hono();
 
 sheds.get('/', async (c) => {
-  const hosts = await getHosts();
+  const targets = await getServerTargets();
   const results = await Promise.allSettled(
-    hosts.map(async (h) => {
-      const list = await clientFor(h).listSheds();
-      return list.sheds.map<ShedWithHost>((s) => ({ ...s, host: h.name }));
+    targets.map(async (t) => {
+      const list = await clientFor(t).listSheds();
+      return list.sheds.map<ShedWithHost>((s) => ({ ...s, host: t.name }));
     }),
   );
 
   const out: ShedWithHost[] = [];
   const errors: { host: string; error: { code: string; message: string } }[] = [];
-  hosts.forEach((h, i) => {
+  targets.forEach((t, i) => {
     const r = results[i];
     if (r.status === 'fulfilled') {
       out.push(...r.value);
     } else {
       const e = r.reason;
       const code = e instanceof AppError ? e.code : 'HOST_UNREACHABLE';
+      // AppError messages are sanitized (no token/fingerprint); other errors
+      // are network failures with no secret material.
       const message = e instanceof Error ? e.message : String(e);
-      errors.push({ host: h.name, error: { code, message } });
+      errors.push({ host: t.name, error: { code, message } });
     }
   });
 
