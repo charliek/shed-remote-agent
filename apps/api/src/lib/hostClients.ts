@@ -48,7 +48,13 @@ export async function requireServerTarget(name: string): Promise<ServerTarget> {
 
 /** Wire-safe Host (no secrets) derived from a target, for the SSH-path callers. */
 function hostFromTarget(t: ServerTarget): Host {
-  return { name: t.name, host: t.host, httpPort: t.httpPort, sshPort: t.sshPort, secure: t.secure };
+  return {
+    name: t.name,
+    host: t.host,
+    ...(t.httpPort != null ? { httpPort: t.httpPort } : {}),
+    sshPort: t.sshPort,
+    secure: t.secure,
+  };
 }
 
 export async function clientForName(name: string): Promise<{ host: Host; client: ShedClient }> {

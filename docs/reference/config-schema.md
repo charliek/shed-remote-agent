@@ -138,12 +138,24 @@ Defined by the shed CLI. shed-remote-agent extracts only the `servers:` map:
 ```yaml
 servers:
   <host-name>:
-    host: string        # hostname / IP
-    http_port: number   # shed-server HTTP port
-    ssh_port: number    # shed-server SSH port
+    host: string         # hostname / IP
+    ssh_port: number     # shed-server SSH port
+    http_port: number    # plain-HTTP API port — required only for a plain-HTTP
+                         #   (no api_url) server; may be omitted for secure ones
+
+    # Secure ("auth + TLS") servers — written by shed v0.7+. All-or-nothing:
+    api_url: string                  # https://host:8443 — must be https
+    control_token: string            # bearer control token (seed)
+    control_token_expires_at: string # RFC3339 expiry of control_token
+    tls_cert_fingerprint: string     # sha256:<64 lowercase hex> — pins the cert
 ```
 
-Other fields (`default_server`, `sheds:`, `added_at:`) are ignored.
+A server is **secure** when it has an `api_url` (see
+[Secure sheds](secure-sheds.md)). The loader is fail-closed: an `api_url` must be
+`https://` and requires both a `control_token` and a `tls_cert_fingerprint`; a
+token/pin without a https `api_url` is rejected; and a plain-HTTP server (no
+`api_url`) must still set `http_port`. The token and fingerprint never cross to
+the browser. Other fields (`default_server`, `sheds:`, `added_at:`) are ignored.
 
 ## Environment variables
 

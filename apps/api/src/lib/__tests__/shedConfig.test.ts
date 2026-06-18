@@ -166,6 +166,46 @@ sheds: {}
   });
 });
 
+describe('optional http_port', () => {
+  const secureNoPort = `servers:
+    sec:
+        host: box.tailnet
+        ssh_port: 2222
+        api_url: https://box.tailnet:8443
+        control_token: shed_control_secret
+        tls_cert_fingerprint: ${PIN}
+`;
+
+  it('parses a secure server with no http_port', () => {
+    const cfg = parseShedConfig(secureNoPort);
+    expect(cfg.servers.sec.http_port).toBeUndefined();
+    const t = serverTargetFromConfig(cfg, 'sec');
+    expect(t?.baseUrl).toBe('https://box.tailnet:8443'); // from api_url, not http_port
+    expect(t && 'httpPort' in t).toBe(false); // key omitted, not undefined
+  });
+
+  it('omits httpPort on the wire Host for a secure server without it', () => {
+    const hosts = hostsFromConfig(parseShedConfig(secureNoPort));
+    expect(hosts[0]).toEqual({
+      name: 'sec',
+      host: 'box.tailnet',
+      sshPort: 2222,
+      secure: true,
+    });
+    expect('httpPort' in hosts[0]).toBe(false);
+  });
+
+  it('rejects a plain-HTTP server (no api_url) that omits http_port', () => {
+    expect(() =>
+      parseShedConfig(`servers:
+    legacy:
+        host: 1.2.3.4
+        ssh_port: 2223
+`),
+    ).toThrow(/http_port is required for a plain-HTTP server/);
+  });
+});
+
 describe('serverTargetsFromConfig', () => {
   it('builds secure + legacy targets with the right baseUrl and secrets', () => {
     const cfg = parseShedConfig(SECURE_RAW);

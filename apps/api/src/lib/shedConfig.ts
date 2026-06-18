@@ -16,8 +16,10 @@ export const TLS_FINGERPRINT_RE = /^sha256:[0-9a-f]{64}$/;
 const serverEntrySchema = z
   .object({
     host: z.string(),
-    http_port: z.number().int().positive(),
-    ssh_port: z.number().int().positive(),
+    // Optional: only a plain-HTTP (no api_url) server needs it. Secure servers
+    // reach the API via api_url, so http_port may be omitted there.
+    http_port: z.number().int().positive().max(65535).optional(),
+    ssh_port: z.number().int().positive().max(65535),
     api_url: z.string().optional(),
     control_token: z
       .string()
@@ -57,6 +59,10 @@ const serverEntrySchema = z
         `tls_cert_fingerprint must match "sha256:<64 lowercase hex>" (got "${e.tls_cert_fingerprint}")`,
       );
     }
+    // A plain-HTTP server has no api_url, so http_port is the only way to reach it.
+    if (!hasApiUrl && e.http_port == null) {
+      fail('http_port is required for a plain-HTTP server (one with no api_url)');
+    }
   });
 
 const shedCacheSchema = z.object({
@@ -84,7 +90,8 @@ export interface ServerTarget {
   name: string;
   host: string;
   sshPort: number;
-  httpPort: number;
+  /** Plain-HTTP port; absent for secure servers that only expose `api_url`. */
+  httpPort?: number;
   /** True when reached over a pinned HTTPS `api_url` with a bearer token. */
   secure: boolean;
   /** Base URL for the shed HTTP API: `api_url` if set, else `http://host:http_port`. */
@@ -110,13 +117,15 @@ export function parseShedConfig(raw: string): ShedClientConfig {
 
 function serverTarget(name: string, e: ShedClientConfig['servers'][string]): ServerTarget {
   const secure = !!e.api_url;
+  // Legacy (no api_url) entries are guaranteed an http_port by the schema refine.
+  const baseUrl = e.api_url ?? `http://${e.host}:${e.http_port}`;
   return {
     name,
     host: e.host,
     sshPort: e.ssh_port,
-    httpPort: e.http_port,
+    ...(e.http_port != null ? { httpPort: e.http_port } : {}),
     secure,
-    baseUrl: e.api_url ?? `http://${e.host}:${e.http_port}`,
+    baseUrl,
     apiUrl: e.api_url,
     tlsCertFingerprint: e.tls_cert_fingerprint,
     controlToken: e.control_token,
@@ -139,7 +148,9 @@ export function hostsFromConfig(cfg: ShedClientConfig): Host[] {
   return Object.entries(cfg.servers ?? {}).map(([name, entry]) => ({
     name,
     host: entry.host,
-    httpPort: entry.http_port,
+    // Omit the key entirely (rather than `undefined`) when a secure server has
+    // no http_port, so the wire shape stays clean.
+    ...(entry.http_port != null ? { httpPort: entry.http_port } : {}),
     sshPort: entry.ssh_port,
     secure: !!entry.api_url,
   }));
