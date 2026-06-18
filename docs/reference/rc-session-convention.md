@@ -122,11 +122,28 @@ auth/identity refactor is in progress on the `shed` side). When implemented:
 See [Remote Control → States](remote-control.md#states) for the classifier regexes.
 For legacy/unmanaged sessions, state is **best-effort** (kind is assumed `agent`).
 
+## Working directory (sheds)
+
+A shed session SHOULD start in the shed's **landing directory**, which a recent
+shed exposes as the env var **`SHED_WORKSPACE`** (`/home/<user>`, or the project
+subdirectory `/home/<user>/<proj>` for a repo/local-dir shed). Resolve it before
+launch with a one-shot SSH probe — `printenv SHED_WORKSPACE` — and pass the
+result to `tmux new-session -c <workdir>` (and `SHED_RC_WORKDIR`). Treat **only**
+`printenv` exit code 1 as "variable unset" → fall back to `/workspace` (older
+sheds); any other non-zero exit is an SSH/transport failure and SHOULD surface,
+not silently misplace the session. An explicit caller-supplied workdir wins.
+Older sheds without the env var still have a static `/workspace`.
+
 ## Workspace-trust auto-accept (repl/agent)
 
 Claude Code shows a first-run workspace-trust prompt the first time it runs in a
-directory. To start a session unattended, a creating tool SHOULD clear it with a
-two-part, belt-and-suspenders convention (verified on claude 2.1.178):
+directory. As of claude 2.1.178 **no CLI flag, env var, or `settings.json` key
+pre-trusts a directory for an interactive/remote-control session** —
+`--dangerously-skip-permissions` and `--permission-mode` do not skip it, and `-p`
+(print mode) skips trust but is one-shot (no persistent session URL), and
+`git init` does **not** skip it. So to start a session unattended, a creating
+tool SHOULD clear it with a two-part, belt-and-suspenders convention (verified on
+claude 2.1.178):
 
 1. **Pre-seed** (before launch): merge `projects["<workdir>"].hasTrustDialogAccepted
    = true` into Claude's config JSON — `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`

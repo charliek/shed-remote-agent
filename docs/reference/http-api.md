@@ -141,7 +141,8 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
   "slug": "demo",
   "display_name": "my-shed/demo",
   "workdir": "/home/shed",
-  "kind": "repl"
+  "kind": "repl",
+  "initial_prompt": "summarize this repo and suggest next steps"
 }
 ```
 
@@ -149,8 +150,9 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
 |-------|---------|-------|
 | `slug` | auto-generated (6 confusable-free chars) | Must match `^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$` |
 | `display_name` | `<shed>/<slug>` or `<machine>/<slug>` | Stored in tmux env (`SHED_RC_DISPLAY_NAME`) and passed as `--name` to `claude`. Must be single-line (no control characters). |
-| `workdir` | the shed `SHED_WORKSPACE` for sheds; the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`) |
+| `workdir` | resolved from the shed's `SHED_WORKSPACE` for sheds (`/workspace` on older sheds); the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`). An explicit value wins over the resolved default. |
 | `kind` | `repl` | One of `agent`, `repl`, `shell`. See [Remote Control → Session kinds](remote-control.md#session-kinds). |
+| `initial_prompt` | none | Optional single-line prompt typed into the session once it is `ready`. Applied **only** to `kind: repl` (an `agent`'s input is the remote URL, not the pane; `shell` has none); ignored otherwise. Best-effort. Control characters (incl. newlines) are rejected. |
 
 ### Bootstrap response
 

@@ -53,9 +53,15 @@ On native machines (both SSH and local), `agent`/`repl` are wrapped in `bash -ic
 | `starting` | Probe ran, no URL or status line yet | Wait; the UI keeps polling |
 | `ready` | Pane is in a terminal good state for its kind (URL present for `agent`/`repl`, any output for `shell`) | Join via the Claude app or attach in-browser |
 | `reconnecting` | Network blip; `claude remote-control` auto-reconnects (`agent` kind only) | Wait; usually clears in a few seconds |
-| `needs-trust` | `claude` refused to run because the workdir isn't trusted | `shed attach <name>` (or SSH to the machine), `cd <workdir>; claude` once, accept the prompt, recreate |
+| `needs-trust` | `claude` refused to run because the workdir isn't trusted | Rare — bootstrap auto-clears trust (see below). If it persists: `shed attach <name>` (or SSH to the machine), `cd "$SHED_WORKSPACE"; claude` once, accept the prompt, recreate |
 | `needs-auth` | `claude` needs a claude.ai login | `claude auth login` on the target, then recreate |
 | `dead` | tmux session is gone (crashed, killed, never existed) | Kill the entry from the UI; create a new one |
+
+For repl/agent, the bootstrap clears Claude's first-run workspace-trust prompt
+automatically — pre-seeding trust for the workdir before launch and accepting the
+prompt over tmux as a fallback — so a fresh session usually reaches `ready`
+without hitting `needs-trust`. See
+[RC Session Convention → Workspace-trust auto-accept](rc-session-convention.md#workspace-trust-auto-accept-replagent).
 
 ## Classifier regexes
 

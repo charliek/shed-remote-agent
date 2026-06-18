@@ -5,7 +5,7 @@ Deferred work — noted here so it doesn't evaporate from the design discussion,
 ## Claude integration
 
 - **In-browser Claude chat** — proxy to a web UI running inside the shed via the shed Connect API. Significantly more work than the current "open in Claude app" flow and the app experience is already excellent on mobile.
-- **Worktree spawn mode** — use `claude remote-control --spawn worktree` so each on-demand session gets its own git worktree. Requires the shed `/workspace` to be a git repo and `WorktreeCreate`/`WorktreeRemove` hooks.
+- **Worktree spawn mode** — use `claude remote-control --spawn worktree` so each on-demand session gets its own git worktree. Requires the shed's workspace (`SHED_WORKSPACE`) to be a git repo and `WorktreeCreate`/`WorktreeRemove` hooks.
 - **Web-driven `claude auth login`** — drive the OAuth flow from the UI instead of asking the user to `shed attach` and run it manually. Needs a small callback-server inside the shed.
 - **Pre-seed workspace trust on shed create** — reverse-engineer Claude Code's trust file format and write it during shed bootstrap so first-run `claude remote-control` never hits the trust prompt.
 - **Live rc status via SSE / WebSocket** — currently the UI polls `/api/sheds/:host/:name/rc` every 10 s. A push channel from the backend would drop the polling and feel instant.
