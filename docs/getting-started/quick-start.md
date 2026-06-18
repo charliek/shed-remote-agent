@@ -16,7 +16,7 @@ Tap **+ New shed**. Fill in:
 
 - **Name** — lowercase letters, digits, hyphens. E.g. `demo-rc`.
 - **Image** — leave as `(server default)` unless you have a preference.
-- **Source** — pick `repo` and select one of your repos (from `github.owners`), or pick `local-dir` and select a directory on the shed host (from `defaults.local_dir.path`). `none` also works — the shed's `/workspace` will just be empty.
+- **Source** — pick `repo` and select one of your repos (from `github.owners`), or pick `local-dir` and select a directory on the shed host (from `defaults.local_dir.path`). `none` also works — the shed's workspace will just be empty.
 - **Start remote-control on create** — leave checked.
 
 Hit **Create shed**. You'll see a progress stream — upstream `shed-server` SSE events are passed straight through: `image`, `rootfs`, `vm-start`, `agent-ready`, etc. When the stream emits `complete`, the shed is up.
@@ -37,7 +37,7 @@ The backend SSHes in (or spawns directly for `type: local` machines) and launche
 
 ## 4. Join from your phone
 
-Tap **Open** on the session card to launch the Claude app (or `claude.ai/code` in a browser) pointed at that environment. Any command you type in the app runs inside the shed, in `/workspace`, in the pre-provisioned Claude Code you just launched.
+Tap **Open** on the session card to launch the Claude app (or `claude.ai/code` in a browser) pointed at that environment. Any command you type in the app runs inside the shed, in its workspace (`SHED_WORKSPACE`), in the pre-provisioned Claude Code you just launched.
 
 If you'd rather paste the URL somewhere else, tap **Copy URL**.
 

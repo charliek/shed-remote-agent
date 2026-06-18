@@ -14,7 +14,7 @@ Designed to live behind Tailscale — there is no auth layer.
   (e.g. Tailscale-reachable boxes) and `type: local` machines that run tmux
   directly on the orchestrator host with no SSH hop
 - Bootstraps `claude remote-control` (or `claude /rc`, or a plain shell) in
-  `/workspace` of any running shed (or a configured `workdir` on a machine) by
+  the shed workspace (`SHED_WORKSPACE`) of any running shed (or a configured `workdir` on a machine) by
   launching it inside a detached tmux session named `rc-<slug>`
 - Three RC kinds — `agent`, `repl`, `shell` — pickable per session
 - Attaches an in-browser xterm.js terminal to any session over a WebSocket

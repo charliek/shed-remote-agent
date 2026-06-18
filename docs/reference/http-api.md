@@ -140,7 +140,7 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
 {
   "slug": "demo",
   "display_name": "my-shed/demo",
-  "workdir": "/workspace",
+  "workdir": "/home/shed",
   "kind": "repl"
 }
 ```
@@ -149,7 +149,7 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
 |-------|---------|-------|
 | `slug` | auto-generated (6 confusable-free chars) | Must match `^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$` |
 | `display_name` | `<shed>/<slug>` or `<machine>/<slug>` | Stored in tmux env (`SHED_RC_DISPLAY_NAME`) and passed as `--name` to `claude`. Must be single-line (no control characters). |
-| `workdir` | `/workspace` for sheds; the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`) |
+| `workdir` | the shed `SHED_WORKSPACE` for sheds; the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`) |
 | `kind` | `repl` | One of `agent`, `repl`, `shell`. See [Remote Control → Session kinds](remote-control.md#session-kinds). |
 
 ### Bootstrap response
@@ -159,7 +159,7 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
   "slug": "abc123",
   "tmux_session": "rc-abc123",
   "display_name": "my-shed/abc123",
-  "workdir": "/workspace",
+  "workdir": "/home/shed",
   "kind": "repl",
   "state": "ready",
   "url": "https://claude.ai/code/session_01ABC...",

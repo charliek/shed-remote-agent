@@ -339,6 +339,40 @@ export async function probe(opts: {
   return classifyPane(opts.kind, result.stdout);
 }
 
+/**
+ * Resolve a shed's RC working directory from the live `SHED_WORKSPACE` env var
+ * (the shed's landing dir — `/home/shed` or `/home/shed/<proj>` for a
+ * repo/local-dir shed). Recent sheds no longer have a static `/workspace`.
+ *
+ * Returns the dir, or `undefined` when the var is unset (an old shed → the
+ * caller falls back to {@link DEFAULT_WORKDIR}). A *transport* failure (we
+ * couldn't reach the shed at all) throws rather than silently misplacing the
+ * session in a `/workspace` that may not exist. `runner` is injectable for tests.
+ */
+export async function resolveShedWorkdir(
+  target: CommandTarget,
+  runner: typeof run = run,
+): Promise<string | undefined> {
+  const res = await runner(target, ['printenv', 'SHED_WORKSPACE'], { timeoutMs: 5_000 });
+  if (res.code === 0) {
+    const dir = res.stdout.trim();
+    // Empty or control-char-laden value: ignore and fall back rather than feed
+    // garbage into `tmux -c` / `SHED_RC_WORKDIR`.
+    return dir && !hasControlChars(dir) ? dir : undefined;
+  }
+  // `printenv VAR` exits with EXACTLY 1 when the var is unset — that's an old
+  // shed, not an error, so fall back. Any other non-zero code is an SSH/transport
+  // failure (255 connection closed, 124 timeout, …) which we must NOT mistake for
+  // "old shed" — otherwise we'd silently place the session in a `/workspace` that
+  // doesn't exist on a recent shed. Surface it (auth→401 like bootstrap, else 502).
+  if (res.code === 1) return undefined;
+  const cls = classifySSHError(res.stderr, res.code);
+  if (cls === 'auth-denied') {
+    throw new AppError('SSH_AUTH_DENIED', 'ssh auth denied resolving shed workspace', 401);
+  }
+  throw new AppError('SSH_UNREACHABLE', `could not resolve shed workspace (${cls})`, 502);
+}
+
 function extractUrl(kind: RcKind, pane: string): string | undefined {
   if (kind === 'agent') {
     return pane.match(/https?:\/\/claude\.ai\/code\?environment=env_[A-Za-z0-9_-]+/)?.[0];

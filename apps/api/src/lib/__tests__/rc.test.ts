@@ -1,5 +1,64 @@
 import { describe, expect, it } from 'bun:test';
-import { classifyPane } from '../rc.js';
+import { classifyPane, resolveShedWorkdir } from '../rc.js';
+import type { CommandTarget } from '../ssh.js';
+
+const TARGET: CommandTarget = { kind: 'ssh', host: 'h', user: 'shed', port: 2222 };
+
+// A fake `run()` that records its argv and returns a canned SSHResult.
+function fakeRunner(result: { code: number; stdout?: string; stderr?: string }) {
+  const calls: { argv: string[] }[] = [];
+  const runner = (async (_t: CommandTarget, argv: string[]) => {
+    calls.push({ argv });
+    return { code: result.code, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+  }) as unknown as typeof import('../ssh.js').run;
+  return { runner, calls };
+}
+
+describe('resolveShedWorkdir', () => {
+  it('returns the trimmed SHED_WORKSPACE on success', async () => {
+    const { runner, calls } = fakeRunner({ code: 0, stdout: '/home/shed/proj\n' });
+    expect(await resolveShedWorkdir(TARGET, runner)).toBe('/home/shed/proj');
+    expect(calls[0].argv).toEqual(['printenv', 'SHED_WORKSPACE']);
+  });
+
+  it('falls back (undefined) when the var is unset (printenv exit 1)', async () => {
+    const { runner } = fakeRunner({ code: 1, stdout: '' });
+    expect(await resolveShedWorkdir(TARGET, runner)).toBeUndefined();
+  });
+
+  it('falls back (undefined) on an empty or whitespace value', async () => {
+    expect(
+      await resolveShedWorkdir(TARGET, fakeRunner({ code: 0, stdout: '   \n' }).runner),
+    ).toBeUndefined();
+  });
+
+  it('falls back (undefined) on a control-char value', async () => {
+    expect(
+      await resolveShedWorkdir(
+        TARGET,
+        fakeRunner({ code: 0, stdout: '/home/shed\x07evil\n' }).runner,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('only treats printenv exit 1 as "unset"; other non-zero codes throw', async () => {
+    // 124 timeout → unreachable (NOT a silent /workspace fallback).
+    const timeout = fakeRunner({ code: 124, stderr: 'operation timed out' });
+    await expect(resolveShedWorkdir(TARGET, timeout.runner)).rejects.toMatchObject({
+      code: 'SSH_UNREACHABLE',
+    });
+    // 255 publickey → auth denied (401), matching bootstrap.
+    const denied = fakeRunner({ code: 255, stderr: 'Permission denied (publickey).' });
+    await expect(resolveShedWorkdir(TARGET, denied.runner)).rejects.toMatchObject({
+      code: 'SSH_AUTH_DENIED',
+    });
+    // 255 connection closed (NOT auth) must NOT be mistaken for "var unset".
+    const closed = fakeRunner({ code: 255, stderr: 'Connection closed by remote host' });
+    await expect(resolveShedWorkdir(TARGET, closed.runner)).rejects.toMatchObject({
+      code: 'SSH_UNREACHABLE',
+    });
+  });
+});
 
 describe('classifyPane(agent, …)', () => {
   it('detects ready + URL', () => {

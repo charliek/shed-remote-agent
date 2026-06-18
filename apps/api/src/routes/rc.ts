@@ -8,6 +8,7 @@ import {
   listRcSessions,
   probeUntilReady,
   RC_PREFIX,
+  resolveShedWorkdir,
   toRcSession,
 } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
@@ -51,12 +52,24 @@ rc.post('/:host/:name/rc', async (c) => {
 
   const target = shedCommandTarget(h, name);
   const targetLabel = `shed:${name}@${host}`;
-  const { slug, tmuxSession, displayName, workdir, id, createdBy, createdAt } = await bootstrap({
+  // Recent sheds land in SHED_WORKSPACE (their home / project dir), not the old
+  // static /workspace. An explicit body.workdir wins; bootstrap falls back to
+  // DEFAULT_WORKDIR when the shed predates the env var.
+  const workdir = body.workdir ?? (await resolveShedWorkdir(target));
+  const {
+    slug,
+    tmuxSession,
+    displayName,
+    workdir: resolvedWorkdir,
+    id,
+    createdBy,
+    createdAt,
+  } = await bootstrap({
     target,
     slug: body.slug,
     displayName: body.display_name,
     displayNameFallback: shedDisplayFallback(name),
-    workdir: body.workdir,
+    workdir,
     kind,
     targetLabel,
   });
@@ -68,7 +81,7 @@ rc.post('/:host/:name/rc', async (c) => {
       slug,
       tmux_session: tmuxSession,
       display_name: displayName,
-      workdir,
+      workdir: resolvedWorkdir,
       kind,
       state: state.state,
       url: state.url,
@@ -78,7 +91,7 @@ rc.post('/:host/:name/rc', async (c) => {
       target_label: targetLabel,
       managed: true,
     },
-    { target: { kind: 'shed', shed_name: name, host }, defaultWorkdir: workdir },
+    { target: { kind: 'shed', shed_name: name, host }, defaultWorkdir: resolvedWorkdir },
   );
   return c.json(session, 201);
 });

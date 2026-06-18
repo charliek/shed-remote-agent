@@ -138,8 +138,9 @@ For legacy/unmanaged sessions, state is **best-effort** (kind is assumed `agent`
     - `kind` → `agent` (pre-convention sessions were all agents). Note this differs
       from the create-time default (`repl`).
     - display name → a caller fallback such as `<target>/<slug>`.
-    - workdir → the reader's own **target-specific** default (e.g. `/workspace` for
-      sheds; the machine's configured workdir for machines).
+    - workdir → the reader's own **target-specific** default (e.g. the shed's
+      `SHED_WORKSPACE` landing dir for sheds — `/workspace` on older sheds; the
+      machine's configured workdir for machines).
 
 ## Writing rules
 

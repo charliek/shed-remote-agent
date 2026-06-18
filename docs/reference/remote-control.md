@@ -93,7 +93,7 @@ SSH attach uses `ssh -tt -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAli
 
 - tmux session name: `rc-<slug>`
 - Default display name (shown in the Claude app session list): `<shed>/<slug>` or `<machine>/<slug>`
-- Default workdir: `/workspace` for sheds, the machine's `workdir` for machines (`~` fallback)
+- Default workdir: the shed `SHED_WORKSPACE` (landing dir) for sheds — `/workspace` on older sheds, the machine's `workdir` for machines (`~` fallback)
 
 Slug generation uses a confusable-free alphabet (`abcdefghjkmnpqrstuvwxyz23456789`) so a human reading the name back from a QR / URL doesn't confuse `0`/`O` or `1`/`l`.
 

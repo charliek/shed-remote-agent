@@ -209,7 +209,7 @@ export default function NewShedPage() {
             <div className="flex-1 text-sm">
               <div className="font-medium">Start a session on create</div>
               <div className="text-muted-foreground text-xs">
-                Bootstraps the chosen kind in /workspace as soon as the shed is up.
+                Bootstraps the chosen kind in the shed's workspace as soon as it's up.
               </div>
             </div>
           </label>
