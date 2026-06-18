@@ -97,6 +97,7 @@ export default function ShedDetailPage() {
   useEffect(() => {
     setShowNewSession(false);
     setDisplayName('');
+    setInitialPrompt('');
   }, [host, name]);
   const newRcM = useMutation({
     mutationFn: () =>
