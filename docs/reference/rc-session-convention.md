@@ -122,6 +122,25 @@ auth/identity refactor is in progress on the `shed` side). When implemented:
 See [Remote Control → States](remote-control.md#states) for the classifier regexes.
 For legacy/unmanaged sessions, state is **best-effort** (kind is assumed `agent`).
 
+## Workspace-trust auto-accept (repl/agent)
+
+Claude Code shows a first-run workspace-trust prompt the first time it runs in a
+directory. To start a session unattended, a creating tool SHOULD clear it with a
+two-part, belt-and-suspenders convention (verified on claude 2.1.178):
+
+1. **Pre-seed** (before launch): merge `projects["<workdir>"].hasTrustDialogAccepted
+   = true` into Claude's config JSON — `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`
+   (NOT `~/.claude/.claude.json`; `CLAUDE_CONFIG_DIR` moves the file). **Merge,
+   don't clobber** — the file holds OAuth/MCP state. Use the exact absolute
+   workdir path. This persists for project subdirectories; it does **not** persist
+   for the home directory (Claude holds home-dir trust per-session only).
+2. **Accept** (fallback, while probing): if the trust prompt is still detected
+   (`needs-trust`), send `Enter` to the pane once — option "1. Yes, I trust this
+   folder" is pre-selected — then keep probing toward `ready`.
+
+A tool that does neither leaves the session in `needs-trust` (still valid — the
+user accepts manually). `shell` sessions skip this (no Claude, no trust gate).
+
 ## Reading rules
 
 1. List candidates with `tmux ls` and keep names beginning with `rc-`.

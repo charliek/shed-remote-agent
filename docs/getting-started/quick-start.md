@@ -72,7 +72,7 @@ After editing, machines show up on the sheds page under a **Machines** section. 
 
 ## Troubleshooting
 
-- **`needs-trust`** — the shed's `/workspace` hasn't been accepted by `claude`. `shed attach <shed>; cd /workspace; claude` once, accept the prompt, exit. Then re-create the RC session.
+- **`needs-trust`** — Claude's first-run workspace-trust prompt wasn't cleared automatically (the bootstrap pre-seeds trust and also accepts the prompt over tmux, so this is rare). Recover manually: `shed attach <shed>; cd "$SHED_WORKSPACE"; claude` once, accept the prompt, exit. Then re-create the RC session.
 - **`needs-auth`** — `claude auth login` hasn't been run in the shed. `shed attach <shed>; claude auth login`. Then retry.
 - **RC list shows `dead`** — the tmux session was killed or `claude` crashed. Kill the entry from the UI and create a new one.
 - **Can't reach a host** — check the host badge on the sheds list; if it's greyed out with an error, the shed-server isn't reachable at `host:http_port` from the backend machine.

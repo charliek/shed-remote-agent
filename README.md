@@ -147,6 +147,10 @@ Post-MVP (explicitly not built):
 - In-browser Claude chat (Connect-API proxy to a web UI inside the shed)
 - Worktree spawn mode for `claude remote-control`
 - Branch selection for repo clones
-- Pre-seeding workspace trust on create
 - Web-driven `claude auth login`
 - Host add/edit flow (edit `~/.shed/config.yaml` directly for now)
+
+A repl/agent session now clears Claude Code's first-run workspace-trust prompt
+automatically: it pre-seeds the workdir as trusted in `~/.claude.json` before
+launch and, as a fallback, accepts the prompt over tmux. So a fresh session
+reaches `ready` unattended without the old "attach, run `claude`, accept" step.

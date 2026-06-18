@@ -6,9 +6,11 @@ import {
   DEFAULT_WORKDIR,
   kill,
   listRcSessions,
+  preseedTrust,
   probeUntilReady,
   RC_PREFIX,
   resolveShedWorkdir,
+  sendTrustAccept,
   toRcSession,
 } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
@@ -53,9 +55,16 @@ rc.post('/:host/:name/rc', async (c) => {
   const target = shedCommandTarget(h, name);
   const targetLabel = `shed:${name}@${host}`;
   // Recent sheds land in SHED_WORKSPACE (their home / project dir), not the old
-  // static /workspace. An explicit body.workdir wins; bootstrap falls back to
-  // DEFAULT_WORKDIR when the shed predates the env var.
-  const workdir = body.workdir ?? (await resolveShedWorkdir(target));
+  // static /workspace. An explicit body.workdir wins; fall back to DEFAULT_WORKDIR
+  // when the shed predates the env var.
+  const workdir = body.workdir ?? (await resolveShedWorkdir(target)) ?? DEFAULT_WORKDIR;
+
+  // claude (repl/agent) gates on a first-run workspace-trust prompt. Pre-seed the
+  // trust for the workdir before launch (best-effort), and arm a send-keys accept
+  // as the fallback during probing, so a fresh session reaches `ready` unattended.
+  const isClaudeKind = kind !== 'shell';
+  if (isClaudeKind) await preseedTrust(target, workdir);
+
   const {
     slug,
     tmuxSession,
@@ -74,7 +83,12 @@ rc.post('/:host/:name/rc', async (c) => {
     targetLabel,
   });
 
-  const state = await probeUntilReady({ target, slug, kind });
+  const state = await probeUntilReady({
+    target,
+    slug,
+    kind,
+    acceptTrust: isClaudeKind ? () => sendTrustAccept(target, tmuxSession) : undefined,
+  });
 
   const session = toRcSession(
     {

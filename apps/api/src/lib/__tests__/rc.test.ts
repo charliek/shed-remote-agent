@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test';
-import { classifyPane, resolveShedWorkdir } from '../rc.js';
+import type { RcState } from '@shed-remote-agent/shared';
+import {
+  classifyPane,
+  preseedTrust,
+  probeUntilReady,
+  resolveShedWorkdir,
+  sendTrustAccept,
+} from '../rc.js';
 import type { CommandTarget } from '../ssh.js';
 
 const TARGET: CommandTarget = { kind: 'ssh', host: 'h', user: 'shed', port: 2222 };
@@ -57,6 +64,81 @@ describe('resolveShedWorkdir', () => {
     await expect(resolveShedWorkdir(TARGET, closed.runner)).rejects.toMatchObject({
       code: 'SSH_UNREACHABLE',
     });
+  });
+});
+
+describe('preseedTrust', () => {
+  it('runs an sh jq merge that marks the workdir trusted (best-effort)', async () => {
+    const { runner, calls } = fakeRunner({ code: 0 });
+    await preseedTrust(TARGET, '/home/shed/proj', runner);
+    const argv = calls[0].argv;
+    expect(argv[0]).toBe('sh');
+    expect(argv[1]).toBe('-c');
+    expect(argv[2]).toContain('hasTrustDialogAccepted'); // the jq merge script
+    expect(argv[argv.length - 1]).toBe('/home/shed/proj'); // workdir passed as $1
+  });
+
+  it('never throws when the merge fails (jq missing, etc.)', async () => {
+    const throwing = (async () => {
+      throw new Error('jq: not found');
+    }) as unknown as typeof import('../ssh.js').run;
+    await expect(preseedTrust(TARGET, '/x', throwing)).resolves.toBeUndefined();
+  });
+});
+
+describe('sendTrustAccept', () => {
+  it('sends Enter to the tmux session (accepts the pre-selected "Yes")', async () => {
+    const { runner, calls } = fakeRunner({ code: 0 });
+    await sendTrustAccept(TARGET, 'rc-abc', runner);
+    expect(calls[0].argv).toEqual(['tmux', 'send-keys', '-t', 'rc-abc', 'Enter']);
+  });
+
+  it('never throws on failure', async () => {
+    const throwing = (async () => {
+      throw new Error('no session');
+    }) as unknown as typeof import('../ssh.js').run;
+    await expect(sendTrustAccept(TARGET, 'rc-x', throwing)).resolves.toBeUndefined();
+  });
+});
+
+describe('probeUntilReady trust auto-accept', () => {
+  const probeSeq = (states: Array<{ state: RcState; url?: string }>) => {
+    let i = 0;
+    return async () => states[Math.min(i++, states.length - 1)];
+  };
+
+  it('accepts the trust prompt once, then reaches ready', async () => {
+    let accepts = 0;
+    const r = await probeUntilReady({
+      target: TARGET,
+      slug: 'abc',
+      kind: 'repl',
+      timeoutMs: 10_000,
+      acceptTrust: async () => {
+        accepts += 1;
+      },
+      probeFn: probeSeq([{ state: 'needs-trust' }, { state: 'ready', url: 'u' }]),
+      sleep: async () => {},
+    });
+    expect(accepts).toBe(1);
+    expect(r.state).toBe('ready');
+  });
+
+  it('surfaces needs-trust (accepting once) if the prompt never clears', async () => {
+    let accepts = 0;
+    const r = await probeUntilReady({
+      target: TARGET,
+      slug: 'abc',
+      kind: 'repl',
+      timeoutMs: 10_000,
+      acceptTrust: async () => {
+        accepts += 1;
+      },
+      probeFn: async () => ({ state: 'needs-trust' as RcState }),
+      sleep: async () => {},
+    });
+    expect(accepts).toBe(1);
+    expect(r.state).toBe('needs-trust');
   });
 });
 
