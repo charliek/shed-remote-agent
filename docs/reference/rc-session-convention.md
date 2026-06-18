@@ -141,6 +141,17 @@ two-part, belt-and-suspenders convention (verified on claude 2.1.178):
 A tool that does neither leaves the session in `needs-trust` (still valid — the
 user accepts manually). `shell` sessions skip this (no Claude, no trust gate).
 
+## Initial prompt (repl)
+
+A creating tool MAY accept an optional **initial prompt** to kick off a `repl`
+session. Once the session is `ready` (its pane is the live Claude REPL), type the
+prompt and submit it: `tmux send-keys -t <session> -l "<prompt>"` then
+`tmux send-keys -t <session> Enter`. Constraints: send it **only** when the
+session reached `ready`, only for `repl` (an `agent`'s input is the remote URL,
+not the pane; `shell` has no REPL), and treat it as **best-effort** — the session
+is the deliverable, so a failed send must not fail creation. The prompt is a
+single line (the REPL submits on Enter); reject control characters.
+
 ## Reading rules
 
 1. List candidates with `tmux ls` and keep names beginning with `rc-`.

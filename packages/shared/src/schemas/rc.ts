@@ -79,6 +79,19 @@ export const createRcRequestSchema = z.object({
     .optional(),
   workdir: z.string().optional(),
   kind: rcKindSchema.optional(),
+  /**
+   * Optional kickoff prompt typed into a `repl` session once it's ready. Single
+   * line (the REPL submits on Enter): control chars (incl. newlines) are rejected.
+   */
+  initial_prompt: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .refine((s) => !hasControlChars(s), {
+      message: 'initial_prompt must be a single line (no control characters)',
+    })
+    .optional(),
 });
 export type CreateRcRequest = z.infer<typeof createRcRequestSchema>;
 

@@ -10,6 +10,7 @@ import {
   probeUntilReady,
   RC_PREFIX,
   resolveShedWorkdir,
+  sendInitialPrompt,
   sendTrustAccept,
   toRcSession,
 } from '../lib/rc.js';
@@ -89,6 +90,12 @@ rc.post('/:host/:name/rc', async (c) => {
     kind,
     acceptTrust: isClaudeKind ? () => sendTrustAccept(target, tmuxSession) : undefined,
   });
+
+  // Type the kickoff prompt only once the repl is ready (its pane is the live
+  // Claude REPL). Skipped for agent (input is remote) / shell, or if not ready.
+  if (body.initial_prompt && kind === 'repl' && state.state === 'ready') {
+    await sendInitialPrompt(target, tmuxSession, body.initial_prompt);
+  }
 
   const session = toRcSession(
     {

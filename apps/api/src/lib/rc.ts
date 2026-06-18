@@ -424,6 +424,27 @@ export async function sendTrustAccept(
   }
 }
 
+/**
+ * Type a kickoff `prompt` into a ready `repl` session and submit it. Best-effort
+ * — the session is the deliverable; a failed prompt-send must not fail the create.
+ * `-l` sends the prompt literally (not as tmux key names); a separate Enter submits.
+ */
+export async function sendInitialPrompt(
+  target: CommandTarget,
+  tmuxSession: string,
+  prompt: string,
+  runner: typeof run = run,
+): Promise<void> {
+  try {
+    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, '-l', prompt], {
+      timeoutMs: 5_000,
+    });
+    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, 'Enter'], { timeoutMs: 5_000 });
+  } catch {
+    // best-effort.
+  }
+}
+
 function extractUrl(kind: RcKind, pane: string): string | undefined {
   if (kind === 'agent') {
     return pane.match(/https?:\/\/claude\.ai\/code\?environment=env_[A-Za-z0-9_-]+/)?.[0];

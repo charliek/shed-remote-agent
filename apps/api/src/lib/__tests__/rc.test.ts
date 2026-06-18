@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import type { RcState } from '@shed-remote-agent/shared';
+import { createRcRequestSchema, type RcState } from '@shed-remote-agent/shared';
 import {
   classifyPane,
   preseedTrust,
   probeUntilReady,
   resolveShedWorkdir,
+  sendInitialPrompt,
   sendTrustAccept,
 } from '../rc.js';
 import type { CommandTarget } from '../ssh.js';
@@ -98,6 +99,45 @@ describe('sendTrustAccept', () => {
       throw new Error('no session');
     }) as unknown as typeof import('../ssh.js').run;
     await expect(sendTrustAccept(TARGET, 'rc-x', throwing)).resolves.toBeUndefined();
+  });
+});
+
+describe('sendInitialPrompt', () => {
+  it('types the prompt literally, then submits with Enter', async () => {
+    const { runner, calls } = fakeRunner({ code: 0 });
+    await sendInitialPrompt(TARGET, 'rc-abc', 'fix the failing tests', runner);
+    expect(calls[0].argv).toEqual([
+      'tmux',
+      'send-keys',
+      '-t',
+      'rc-abc',
+      '-l',
+      'fix the failing tests',
+    ]);
+    expect(calls[1].argv).toEqual(['tmux', 'send-keys', '-t', 'rc-abc', 'Enter']);
+  });
+
+  it('never throws on failure (best-effort)', async () => {
+    const throwing = (async () => {
+      throw new Error('no session');
+    }) as unknown as typeof import('../ssh.js').run;
+    await expect(sendInitialPrompt(TARGET, 'rc-x', 'hi', throwing)).resolves.toBeUndefined();
+  });
+});
+
+describe('createRcRequestSchema initial_prompt', () => {
+  it('accepts and trims a single-line prompt', () => {
+    expect(createRcRequestSchema.parse({ initial_prompt: '  do a thing  ' }).initial_prompt).toBe(
+      'do a thing',
+    );
+  });
+
+  it('rejects a prompt with control chars (e.g. a newline)', () => {
+    expect(() => createRcRequestSchema.parse({ initial_prompt: 'line1\nline2' })).toThrow();
+  });
+
+  it('is optional', () => {
+    expect(createRcRequestSchema.parse({}).initial_prompt).toBeUndefined();
   });
 });
 
