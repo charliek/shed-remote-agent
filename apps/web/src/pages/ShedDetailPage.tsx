@@ -78,11 +78,13 @@ export default function ShedDetailPage() {
     SHED_ALLOWED_KINDS.includes(DEFAULT_RC_KIND) ? DEFAULT_RC_KIND : SHED_ALLOWED_KINDS[0],
   );
   const [displayName, setDisplayName] = useState('');
+  const [initialPrompt, setInitialPrompt] = useState('');
   const [showNewSession, setShowNewSession] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const closeNewSession = () => {
     setShowNewSession(false);
     setDisplayName('');
+    setInitialPrompt('');
   };
   // Focus the name field when the form is revealed.
   useEffect(() => {
@@ -95,17 +97,21 @@ export default function ShedDetailPage() {
   useEffect(() => {
     setShowNewSession(false);
     setDisplayName('');
+    setInitialPrompt('');
   }, [host, name]);
   const newRcM = useMutation({
     mutationFn: () =>
       api.createRcSession(host, name, {
         kind: rcKind,
         display_name: displayName.trim() || undefined,
+        // Only a repl pane takes typed input; ignore the prompt for other kinds.
+        initial_prompt: (rcKind === 'repl' && initialPrompt.trim()) || undefined,
       }),
     onSuccess: (s) => {
       toastForRcCreate(s);
       setShowNewSession(false);
       setDisplayName('');
+      setInitialPrompt('');
       qc.invalidateQueries({ queryKey: ['rc', host, name] });
       qc.invalidateQueries({ queryKey: ['sessions', host, name] });
     },
@@ -283,6 +289,29 @@ export default function ShedDetailPage() {
                     allowedKinds={SHED_ALLOWED_KINDS}
                   />
                 </div>
+                {rcKind === 'repl' && (
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="rc-initial-prompt"
+                      className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+                    >
+                      Initial prompt <span className="text-faint normal-case">· optional</span>
+                    </label>
+                    <input
+                      id="rc-initial-prompt"
+                      type="text"
+                      value={initialPrompt}
+                      onChange={(e) => setInitialPrompt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') closeNewSession();
+                      }}
+                      placeholder="e.g. summarize this repo and suggest next steps"
+                      className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={newRcM.isPending}
+                    />
+                    <p className="text-faint text-xs">Typed into the REPL once it's ready.</p>
+                  </div>
+                )}
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" onClick={closeNewSession} disabled={newRcM.isPending}>
                     Cancel

@@ -1,13 +1,17 @@
 import { createRcRequestSchema, DEFAULT_RC_KIND, type Host } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
-import { clientFor, clientForName } from '../lib/hostClients.js';
+import { clientForName } from '../lib/hostClients.js';
 import {
   bootstrap,
   DEFAULT_WORKDIR,
   kill,
   listRcSessions,
+  preseedTrust,
   probeUntilReady,
   RC_PREFIX,
+  resolveShedWorkdir,
+  sendInitialPrompt,
+  sendTrustAccept,
   toRcSession,
 } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
@@ -41,34 +45,64 @@ rc.get('/:host/:name/rc', async (c) => {
 
 rc.post('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
-  const { host: h } = await clientForName(host);
+  const { host: h, client } = await clientForName(host);
   const body = createRcRequestSchema.parse(await parseJsonBody(c));
   const kind = body.kind ?? DEFAULT_RC_KIND;
 
   // Fail fast with a proper 404 if the shed doesn't exist, before paying an
   // SSH round-trip that would surface as a generic 500.
-  await clientFor(h).getShed(name);
+  await client.getShed(name);
 
   const target = shedCommandTarget(h, name);
   const targetLabel = `shed:${name}@${host}`;
-  const { slug, tmuxSession, displayName, workdir, id, createdBy, createdAt } = await bootstrap({
+  // Recent sheds land in SHED_WORKSPACE (their home / project dir), not the old
+  // static /workspace. An explicit body.workdir wins; fall back to DEFAULT_WORKDIR
+  // when the shed predates the env var.
+  const workdir = body.workdir ?? (await resolveShedWorkdir(target)) ?? DEFAULT_WORKDIR;
+
+  // claude (repl/agent) gates on a first-run workspace-trust prompt. Pre-seed the
+  // trust for the workdir before launch (best-effort), and arm a send-keys accept
+  // as the fallback during probing, so a fresh session reaches `ready` unattended.
+  const isClaudeKind = kind !== 'shell';
+  if (isClaudeKind) await preseedTrust(target, workdir);
+
+  const {
+    slug,
+    tmuxSession,
+    displayName,
+    workdir: resolvedWorkdir,
+    id,
+    createdBy,
+    createdAt,
+  } = await bootstrap({
     target,
     slug: body.slug,
     displayName: body.display_name,
     displayNameFallback: shedDisplayFallback(name),
-    workdir: body.workdir,
+    workdir,
     kind,
     targetLabel,
   });
 
-  const state = await probeUntilReady({ target, slug, kind });
+  const state = await probeUntilReady({
+    target,
+    slug,
+    kind,
+    acceptTrust: isClaudeKind ? () => sendTrustAccept(target, tmuxSession) : undefined,
+  });
+
+  // Type the kickoff prompt only once the repl is ready (its pane is the live
+  // Claude REPL). Skipped for agent (input is remote) / shell, or if not ready.
+  if (body.initial_prompt && kind === 'repl' && state.state === 'ready') {
+    await sendInitialPrompt(target, tmuxSession, body.initial_prompt);
+  }
 
   const session = toRcSession(
     {
       slug,
       tmux_session: tmuxSession,
       display_name: displayName,
-      workdir,
+      workdir: resolvedWorkdir,
       kind,
       state: state.state,
       url: state.url,
@@ -78,7 +112,7 @@ rc.post('/:host/:name/rc', async (c) => {
       target_label: targetLabel,
       managed: true,
     },
-    { target: { kind: 'shed', shed_name: name, host }, defaultWorkdir: workdir },
+    { target: { kind: 'shed', shed_name: name, host }, defaultWorkdir: resolvedWorkdir },
   );
   return c.json(session, 201);
 });

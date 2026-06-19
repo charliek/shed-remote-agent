@@ -15,7 +15,7 @@ const OPTIONS: { value: RcKind; label: string; hint: string }[] = [
   {
     value: 'shell',
     label: 'shell',
-    hint: 'plain bash in /workspace',
+    hint: 'plain bash in the shed workspace',
   },
 ];
 

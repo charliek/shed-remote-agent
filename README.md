@@ -14,7 +14,7 @@ Designed to live behind Tailscale — there is no auth layer.
   (e.g. Tailscale-reachable boxes) and `type: local` machines that run tmux
   directly on the orchestrator host with no SSH hop
 - Bootstraps `claude remote-control` (or `claude /rc`, or a plain shell) in
-  `/workspace` of any running shed (or a configured `workdir` on a machine) by
+  the shed workspace (`SHED_WORKSPACE`) of any running shed (or a configured `workdir` on a machine) by
   launching it inside a detached tmux session named `rc-<slug>`
 - Three RC kinds — `agent`, `repl`, `shell` — pickable per session
 - Attaches an in-browser xterm.js terminal to any session over a WebSocket
@@ -22,6 +22,9 @@ Designed to live behind Tailscale — there is no auth layer.
   `claude.ai/code/session_...` URL with Copy/Open buttons
 - Surfaces actionable states: `starting`, `ready`, `reconnecting`, `needs-trust`,
   `needs-auth`, `dead`
+- Talks to **secure sheds** (shed `v0.7+`) transparently: pinned-TLS HTTPS with a
+  self-signed cert + a bearer control token it mints/refreshes over SSH, alongside
+  legacy plain-HTTP sheds — see [secure sheds](./docs/reference/secure-sheds.md)
 - Light and dark themes — follows your OS by default, with a one-tap toggle
 
 ## Stack
@@ -144,6 +147,10 @@ Post-MVP (explicitly not built):
 - In-browser Claude chat (Connect-API proxy to a web UI inside the shed)
 - Worktree spawn mode for `claude remote-control`
 - Branch selection for repo clones
-- Pre-seeding workspace trust on create
 - Web-driven `claude auth login`
 - Host add/edit flow (edit `~/.shed/config.yaml` directly for now)
+
+A repl/agent session now clears Claude Code's first-run workspace-trust prompt
+automatically: it pre-seeds the workdir as trusted in `~/.claude.json` before
+launch and, as a fallback, accepts the prompt over tmux. So a fresh session
+reaches `ready` unattended without the old "attach, run `claude`, accept" step.

@@ -14,6 +14,22 @@ import { type CommandTarget, classifySSHError, run } from './ssh.js';
 export const RC_PREFIX = 'rc-';
 export const DEFAULT_WORKDIR = '/workspace';
 
+/**
+ * sh snippet (run as `sh -c <script> _ <workdir>`) that marks `<workdir>` trusted
+ * in Claude Code's config so the first-run workspace-trust prompt never appears.
+ * It merges (never clobbers, to preserve OAuth/MCP state) into
+ * `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` via jq, writing atomically. Verified
+ * on claude 2.1.178. `\$` escapes keep these as shell/jq tokens, not TS interpolation.
+ */
+const PRESEED_TRUST_SCRIPT =
+  `f="\${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"; d="$1"; ` +
+  `mkdir -p "$(dirname "$f")" 2>/dev/null || true; tmp="$f.sra-tmp.$$"; ` +
+  `if [ -s "$f" ]; then cat "$f"; else echo '{}'; fi | ` +
+  `jq --arg d "$d" '.projects[$d].hasTrustDialogAccepted = true' > "$tmp" 2>/dev/null; ` +
+  // Only install the temp if it's valid JSON — never replace .claude.json with
+  // empty/partial output (POSIX sh has no pipefail to catch a failed `cat`).
+  `if jq -e . "$tmp" >/dev/null 2>&1; then mv "$tmp" "$f"; else rm -f "$tmp" 2>/dev/null; fi`;
+
 /** Schema version stamped into SHED_RC_V. Bumped only for breaking changes
  * (additive keys do not bump it). See docs/reference/rc-session-convention.md. */
 export const RC_SCHEMA_VERSION = 1;
@@ -339,6 +355,96 @@ export async function probe(opts: {
   return classifyPane(opts.kind, result.stdout);
 }
 
+/**
+ * Resolve a shed's RC working directory from the live `SHED_WORKSPACE` env var
+ * (the shed's landing dir — `/home/shed` or `/home/shed/<proj>` for a
+ * repo/local-dir shed). Recent sheds no longer have a static `/workspace`.
+ *
+ * Returns the dir, or `undefined` when the var is unset (an old shed → the
+ * caller falls back to {@link DEFAULT_WORKDIR}). A *transport* failure (we
+ * couldn't reach the shed at all) throws rather than silently misplacing the
+ * session in a `/workspace` that may not exist. `runner` is injectable for tests.
+ */
+export async function resolveShedWorkdir(
+  target: CommandTarget,
+  runner: typeof run = run,
+): Promise<string | undefined> {
+  const res = await runner(target, ['printenv', 'SHED_WORKSPACE'], { timeoutMs: 5_000 });
+  if (res.code === 0) {
+    const dir = res.stdout.trim();
+    // Empty or control-char-laden value: ignore and fall back rather than feed
+    // garbage into `tmux -c` / `SHED_RC_WORKDIR`.
+    return dir && !hasControlChars(dir) ? dir : undefined;
+  }
+  // `printenv VAR` exits with EXACTLY 1 when the var is unset — that's an old
+  // shed, not an error, so fall back. Any other non-zero code is an SSH/transport
+  // failure (255 connection closed, 124 timeout, …) which we must NOT mistake for
+  // "old shed" — otherwise we'd silently place the session in a `/workspace` that
+  // doesn't exist on a recent shed. Surface it (auth→401 like bootstrap, else 502).
+  if (res.code === 1) return undefined;
+  const cls = classifySSHError(res.stderr, res.code);
+  if (cls === 'auth-denied') {
+    throw new AppError('SSH_AUTH_DENIED', 'ssh auth denied resolving shed workspace', 401);
+  }
+  throw new AppError('SSH_UNREACHABLE', `could not resolve shed workspace (${cls})`, 502);
+}
+
+/**
+ * Best-effort: pre-accept Claude Code's workspace-trust for `workdir` before
+ * launch, so a fresh repl/agent reaches `ready` without the manual trust step.
+ * Never throws — if the merge fails (no `jq`, odd config layout, …) the
+ * send-keys fallback in {@link probeUntilReady} still accepts the prompt.
+ */
+export async function preseedTrust(
+  target: CommandTarget,
+  workdir: string,
+  runner: typeof run = run,
+): Promise<void> {
+  try {
+    await runner(target, ['sh', '-c', PRESEED_TRUST_SCRIPT, '_', workdir], { timeoutMs: 5_000 });
+  } catch {
+    // ignore — the interactive accept covers any pre-seed failure.
+  }
+}
+
+/**
+ * Accept the first-run trust prompt by pressing Enter (the "1. Yes, I trust this
+ * folder" option is pre-selected). Best-effort — used as `probeUntilReady`'s
+ * `acceptTrust` fallback when the pre-seed didn't take.
+ */
+export async function sendTrustAccept(
+  target: CommandTarget,
+  tmuxSession: string,
+  runner: typeof run = run,
+): Promise<void> {
+  try {
+    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, 'Enter'], { timeoutMs: 5_000 });
+  } catch {
+    // best-effort; probeUntilReady surfaces needs-trust if it didn't clear.
+  }
+}
+
+/**
+ * Type a kickoff `prompt` into a ready `repl` session and submit it. Best-effort
+ * — the session is the deliverable; a failed prompt-send must not fail the create.
+ * `-l` sends the prompt literally (not as tmux key names); a separate Enter submits.
+ */
+export async function sendInitialPrompt(
+  target: CommandTarget,
+  tmuxSession: string,
+  prompt: string,
+  runner: typeof run = run,
+): Promise<void> {
+  try {
+    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, '-l', prompt], {
+      timeoutMs: 5_000,
+    });
+    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, 'Enter'], { timeoutMs: 5_000 });
+  } catch {
+    // best-effort.
+  }
+}
+
 function extractUrl(kind: RcKind, pane: string): string | undefined {
   if (kind === 'agent') {
     return pane.match(/https?:\/\/claude\.ai\/code\?environment=env_[A-Za-z0-9_-]+/)?.[0];
@@ -568,13 +674,39 @@ export async function probeUntilReady(opts: {
   slug: string;
   kind: RcKind;
   timeoutMs?: number;
+  /**
+   * Called once if the workspace-trust prompt appears, to accept it (the route
+   * sends `tmux send-keys Enter`). The fallback for when the pre-seed didn't take.
+   */
+  acceptTrust?: () => Promise<void>;
+  /** Injectable for tests. */
+  probeFn?: (o: { target: CommandTarget; slug: string; kind: RcKind }) => Promise<{
+    state: RcState;
+    url?: string;
+  }>;
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<{ state: RcState; url?: string }> {
+  const probeOnce = opts.probeFn ?? probe;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const deadline = Date.now() + (opts.timeoutMs ?? 20_000);
   let last: { state: RcState; url?: string } = { state: 'starting' };
+  let trustAccepted = false;
   while (Date.now() < deadline) {
-    last = await probe({ target: opts.target, slug: opts.slug, kind: opts.kind });
+    last = await probeOnce({ target: opts.target, slug: opts.slug, kind: opts.kind });
+    // Auto-accept the first-run trust prompt once, then keep polling so claude
+    // can proceed to `ready`. If it never clears, we fall through and surface
+    // `needs-trust` as before.
+    if (last.state === 'needs-trust' && opts.acceptTrust && !trustAccepted) {
+      trustAccepted = true;
+      await opts.acceptTrust();
+      // Keep `last` as needs-trust (don't mask it as starting): the `continue`
+      // already skips the return below, and if the deadline expires during the
+      // accept/sleep we correctly surface needs-trust rather than starting.
+      await sleep(750);
+      continue;
+    }
     if (last.state !== 'starting') return last;
-    await new Promise((r) => setTimeout(r, 750));
+    await sleep(750);
   }
   return last;
 }

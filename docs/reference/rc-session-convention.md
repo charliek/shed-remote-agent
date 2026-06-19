@@ -122,6 +122,53 @@ auth/identity refactor is in progress on the `shed` side). When implemented:
 See [Remote Control → States](remote-control.md#states) for the classifier regexes.
 For legacy/unmanaged sessions, state is **best-effort** (kind is assumed `agent`).
 
+## Working directory (sheds)
+
+A shed session SHOULD start in the shed's **landing directory**, which a recent
+shed exposes as the env var **`SHED_WORKSPACE`** (`/home/<user>`, or the project
+subdirectory `/home/<user>/<proj>` for a repo/local-dir shed). Resolve it before
+launch with a one-shot SSH probe — `printenv SHED_WORKSPACE` — and pass the
+result to `tmux new-session -c <workdir>` (and `SHED_RC_WORKDIR`). Treat **only**
+`printenv` exit code 1 as "variable unset" → fall back to `/workspace` (older
+sheds); any other non-zero exit is an SSH/transport failure and SHOULD surface,
+not silently misplace the session. An explicit caller-supplied workdir wins.
+Older sheds without the env var still have a static `/workspace`.
+
+## Workspace-trust auto-accept (repl/agent)
+
+Claude Code shows a first-run workspace-trust prompt the first time it runs in a
+directory. As of claude 2.1.178 **no CLI flag, env var, or `settings.json` key
+pre-trusts a directory for an interactive/remote-control session** —
+`--dangerously-skip-permissions` and `--permission-mode` do not skip it, and `-p`
+(print mode) skips trust but is one-shot (no persistent session URL), and
+`git init` does **not** skip it. So to start a session unattended, a creating
+tool SHOULD clear it with a two-part, belt-and-suspenders convention (verified on
+claude 2.1.178):
+
+1. **Pre-seed** (before launch): merge `projects["<workdir>"].hasTrustDialogAccepted
+   = true` into Claude's config JSON — `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`
+   (NOT `~/.claude/.claude.json`; `CLAUDE_CONFIG_DIR` moves the file). **Merge,
+   don't clobber** — the file holds OAuth/MCP state. Use the exact absolute
+   workdir path. This persists for project subdirectories; it does **not** persist
+   for the home directory (Claude holds home-dir trust per-session only).
+2. **Accept** (fallback, while probing): if the trust prompt is still detected
+   (`needs-trust`), send `Enter` to the pane once — option "1. Yes, I trust this
+   folder" is pre-selected — then keep probing toward `ready`.
+
+A tool that does neither leaves the session in `needs-trust` (still valid — the
+user accepts manually). `shell` sessions skip this (no Claude, no trust gate).
+
+## Initial prompt (repl)
+
+A creating tool MAY accept an optional **initial prompt** to kick off a `repl`
+session. Once the session is `ready` (its pane is the live Claude REPL), type the
+prompt and submit it: `tmux send-keys -t <session> -l "<prompt>"` then
+`tmux send-keys -t <session> Enter`. Constraints: send it **only** when the
+session reached `ready`, only for `repl` (an `agent`'s input is the remote URL,
+not the pane; `shell` has no REPL), and treat it as **best-effort** — the session
+is the deliverable, so a failed send must not fail creation. The prompt is a
+single line (the REPL submits on Enter); reject control characters.
+
 ## Reading rules
 
 1. List candidates with `tmux ls` and keep names beginning with `rc-`.
@@ -138,8 +185,9 @@ For legacy/unmanaged sessions, state is **best-effort** (kind is assumed `agent`
     - `kind` → `agent` (pre-convention sessions were all agents). Note this differs
       from the create-time default (`repl`).
     - display name → a caller fallback such as `<target>/<slug>`.
-    - workdir → the reader's own **target-specific** default (e.g. `/workspace` for
-      sheds; the machine's configured workdir for machines).
+    - workdir → the reader's own **target-specific** default (e.g. the shed's
+      `SHED_WORKSPACE` landing dir for sheds — `/workspace` on older sheds; the
+      machine's configured workdir for machines).
 
 ## Writing rules
 
