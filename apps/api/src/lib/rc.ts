@@ -1,6 +1,8 @@
 import {
   DEFAULT_RC_KIND,
   hasControlChars,
+  MIN_MANAGED_RC_VERSION,
+  RC_SCHEMA_VERSION,
   type RcKind,
   type RcSession,
   type RcState,
@@ -30,9 +32,9 @@ const PRESEED_TRUST_SCRIPT =
   // empty/partial output (POSIX sh has no pipefail to catch a failed `cat`).
   `if jq -e . "$tmp" >/dev/null 2>&1; then mv "$tmp" "$f"; else rm -f "$tmp" 2>/dev/null; fi`;
 
-/** Schema version stamped into SHED_RC_V. Bumped only for breaking changes
- * (additive keys do not bump it). See docs/reference/rc-session-convention.md. */
-export const RC_SCHEMA_VERSION = 1;
+/** Re-export the convention schema version (owned by @shed-remote-agent/shared,
+ * stamped into SHED_RC_V). v2 for the kind rename. */
+export { RC_SCHEMA_VERSION };
 /** Stable tool identifier for SHED_RC_CREATED_BY. MUST NOT contain '/'. */
 export const RC_TOOL_NAME = 'shed-remote-agent';
 /** `<tool>/<version>` provenance string. The version is read from this package's
@@ -109,7 +111,7 @@ export interface RcMetadata {
 
 /**
  * Raw, unescaped SHED_RC_* key/value pairs in deterministic order. The single
- * source of truth for the metadata a managed RC session carries (v1).
+ * source of truth for the metadata a managed RC session carries (v2).
  */
 export function rcMetaEnv(meta: RcMetadata): Array<[string, string]> {
   const pairs: Array<[string, string]> = [
@@ -167,7 +169,10 @@ function normalizeCreatedAt(raw: string | undefined): string | undefined {
 function isManagedVersion(raw: string | undefined): boolean {
   // Strictly a canonical positive integer — reject exotic numeric spellings
   // (1e3, 0x1, 1.0, +1) so foreign/hostile input matches the spec's grammar.
-  return raw !== undefined && /^\d+$/.test(raw) && Number(raw) >= 1;
+  // Managed iff >= the reader's floor: a v1 session (SHED_RC_V=1, old kind
+  // grammar) is unmanaged/foreign; a version above the floor (incl. a future
+  // one) is managed — known fields rendered, session never dropped.
+  return raw !== undefined && /^\d+$/.test(raw) && Number(raw) >= MIN_MANAGED_RC_VERSION;
 }
 
 /** tmux refuses to create a session whose name already exists. A caller-supplied
@@ -186,12 +191,12 @@ export function isMissingSessionError(stderr: string): boolean {
 
 /**
  * Builds the inner command the tmux session runs. Three shapes:
- *   agent  – the today's broker, hosts up to 32 cloud-driven sessions.
- *   repl   – an interactive `claude` REPL with `/rc` enabled on top, so the
- *            live conversation is what attachers see.
- *   shell  – a plain login bash; used for ad-hoc terminal access.
+ *   claude-broker – the broker, hosts up to 32 cloud-driven sessions.
+ *   claude-rc     – an interactive `claude` REPL with `/rc` enabled on top, so the
+ *                   live conversation is what attachers see.
+ *   shell         – a plain login bash; used for ad-hoc terminal access.
  *
- * When `interactiveShell` is true, repl/agent are wrapped in `bash -ic` so
+ * When `interactiveShell` is true, the claude kinds are wrapped in `bash -ic` so
  * the user's ~/.bashrc runs and PATH-mutating tools like nvm/asdf/pnpm are
  * picked up before claude is exec'd. Needed on native machines where claude
  * lives under e.g. ~/.nvm/.../bin/claude rather than /usr/local/bin.
@@ -203,9 +208,9 @@ export function buildInnerCommand(
 ): string {
   const cmd = (() => {
     switch (kind) {
-      case 'agent':
+      case 'claude-broker':
         return `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
-      case 'repl':
+      case 'claude-rc':
         return `claude --name ${shellQuote(displayName)} /rc`;
       case 'shell':
         return 'bash -l';
@@ -425,9 +430,9 @@ export async function sendTrustAccept(
 }
 
 /**
- * Type a kickoff `prompt` into a ready `repl` session and submit it. Best-effort
- * — the session is the deliverable; a failed prompt-send must not fail the create.
- * `-l` sends the prompt literally (not as tmux key names); a separate Enter submits.
+ * Type a kickoff line into a ready `claude-rc` (prompt) or `shell` (command) session
+ * and submit it. Best-effort — the session is the deliverable; a failed send must not
+ * fail the create. `-l` sends it literally (not as tmux key names); Enter submits.
  */
 export async function sendInitialPrompt(
   target: CommandTarget,
@@ -446,10 +451,10 @@ export async function sendInitialPrompt(
 }
 
 function extractUrl(kind: RcKind, pane: string): string | undefined {
-  if (kind === 'agent') {
+  if (kind === 'claude-broker') {
     return pane.match(/https?:\/\/claude\.ai\/code\?environment=env_[A-Za-z0-9_-]+/)?.[0];
   }
-  if (kind === 'repl') {
+  if (kind === 'claude-rc') {
     return pane.match(/https?:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+/)?.[0];
   }
   return undefined;
@@ -475,16 +480,16 @@ export function classifyPane(kind: RcKind, pane: string): { state: RcState; url?
     }
   }
 
-  if (kind === 'agent') {
-    const url = extractUrl('agent', pane);
+  if (kind === 'claude-broker') {
+    const url = extractUrl('claude-broker', pane);
     if (/\bReconnecting\b/.test(pane)) return { state: 'reconnecting', url };
     if (/\bConnected\b/.test(pane) && url) return { state: 'ready', url };
     if (url) return { state: 'ready', url };
     return { state: 'starting' };
   }
 
-  if (kind === 'repl') {
-    const url = extractUrl('repl', pane);
+  if (kind === 'claude-rc') {
+    const url = extractUrl('claude-rc', pane);
     if (/Remote Control connecting/i.test(pane) && !url) return { state: 'starting' };
     if (/Remote Control active/i.test(pane) && url) return { state: 'ready', url };
     if (url) return { state: 'ready', url };
@@ -497,11 +502,12 @@ export function classifyPane(kind: RcKind, pane: string): { state: RcState; url?
 }
 
 function parseKind(raw: string): RcKind {
-  if (raw === 'agent' || raw === 'repl' || raw === 'shell') return raw;
-  // Legacy/unmanaged sessions (no SHED_RC_KIND) predate the field and were all
-  // agents — default to `agent`. NOTE: this is intentionally different from the
-  // create-time default (DEFAULT_RC_KIND = 'repl').
-  return 'agent';
+  if (raw === 'claude-broker' || raw === 'claude-rc' || raw === 'shell') return raw;
+  // Unrecognized kind value (an old `agent`/`repl`, or anything foreign) under
+  // v2: default to `claude-broker` — the renamed analog of the pre-convention
+  // default (sessions were all brokers). Intentionally different from the
+  // create-time default (DEFAULT_RC_KIND = 'claude-rc').
+  return 'claude-broker';
 }
 
 export interface RawRcSession {
@@ -562,11 +568,11 @@ export function parseRcSession(input: ParseRcSessionInput): RawRcSession {
   const env = parseRcEnv(input.envDump);
   const slug = input.tmuxSession.slice(RC_PREFIX.length);
 
-  // Legacy/unmanaged: no valid SHED_RC_V. Any stray SHED_RC_* values are not
-  // under a known schema version, so ignore them and apply legacy defaults
-  // (kind=agent, fallback display name, caller's target-default workdir).
+  // Legacy/unmanaged: no valid SHED_RC_V (>= 2). Any stray SHED_RC_* values are
+  // not under a known schema version, so ignore them and apply legacy defaults
+  // (kind=claude-broker, fallback display name, caller's target-default workdir).
   if (!isManagedVersion(env.get(ENV.v)?.trim())) {
-    const kind: RcKind = 'agent';
+    const kind: RcKind = 'claude-broker';
     const { state, url } = classifyPane(kind, input.pane);
     return {
       slug,

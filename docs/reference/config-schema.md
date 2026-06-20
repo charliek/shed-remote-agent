@@ -80,7 +80,7 @@ The local schema is **strict**: putting `host` or `ssh_port` on a local entry is
 | Aspect | `type: ssh` | `type: local` |
 |--------|-------------|---------------|
 | Connection | `ssh user@host:ssh_port` per command | `Bun.spawn(['bash','-c', …])` in-process |
-| Required prereqs on target | `tmux`, `claude` (for agent/repl), SSH key in `authorized_keys` | `tmux`, `claude` (for agent/repl). No SSH. |
+| Required prereqs on target | `tmux`, `claude` (for claude-broker/claude-rc), SSH key in `authorized_keys` | `tmux`, `claude` (for claude-broker/claude-rc). No SSH. |
 | `interactiveShell` wrap | Yes — `bash -ic` wraps `claude` so PATH (nvm/asdf) is loaded | Yes — same wrapper, same reason |
 | Browser attach | `ssh -tt … tmux attach` | Direct `tmux attach` under Bun's PTY |
 | `user` field | Required (SSH login) | Optional (display only) |

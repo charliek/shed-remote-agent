@@ -25,15 +25,15 @@ Hit **Create shed**. You'll see a progress stream — upstream `shed-server` SSE
 
 If you skipped "Start remote-control on create", open the new shed from the list. The detail page shows status + origin + the empty RC sessions panel. Tap **+ New session** to reveal the creation form.
 
-Pick a session **kind** — the default is `repl`:
+Pick a session **kind** — the default is `claude-rc`:
 
 | Kind | Inner command | When to use |
 |------|---------------|-------------|
-| `agent` | `claude remote-control --name <display> --spawn same-dir` | Cloud-driven broker. The Claude app picks sessions from this pool and spawns child sessions in the current dir. |
-| `repl` | `claude --name <display> /rc` | Interactive Claude REPL with `/rc` enabled. The live conversation is what attachers see. |
+| `claude-broker` | `claude remote-control --name <display> --spawn same-dir` | Cloud-driven broker. The Claude app picks sessions from this pool and spawns child sessions in the current dir. |
+| `claude-rc` | `claude --name <display> /rc` | Interactive Claude REPL with `/rc` enabled. The live conversation is what attachers see. |
 | `shell` | `bash -l` | Plain login shell. No Claude — useful for ad-hoc terminal access. |
 
-The backend SSHes in (or spawns directly for `type: local` machines) and launches the inner command inside a detached tmux session named `rc-<slug>`. It then polls the pane until one of the terminal states appears. Usually within 2–5 seconds you'll see **ready** + a URL like `https://claude.ai/code?environment=env_01RP...` (for `agent`/`repl`; `shell` goes straight to `ready` with no URL).
+The backend SSHes in (or spawns directly for `type: local` machines) and launches the inner command inside a detached tmux session named `rc-<slug>`. It then polls the pane until one of the terminal states appears. Usually within 2–5 seconds you'll see **ready** + a URL like `https://claude.ai/code?environment=env_01RP...` (for `claude-broker`/`claude-rc`; `shell` goes straight to `ready` with no URL).
 
 ## 4. Join from your phone
 

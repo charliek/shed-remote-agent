@@ -7,7 +7,7 @@ A mobile-first web UI that browses [sheds](https://github.com/charliek/shed) acr
 - **List sheds across all hosts** discovered from `~/.shed/config.yaml`
 - **Create a new shed** with a git repo (gh-backed picker) or a host-side local directory
 - **Native machines as RC targets** alongside sheds. SSH machines (e.g. Tailscale-reachable boxes) and `type: local` machines that run on the orchestrator host itself with no SSH hop
-- **Three RC kinds**: `agent` (cloud-driven broker), `repl` (interactive `claude` REPL with `/rc`), and `shell` (plain login bash). Default is `repl`
+- **Three RC kinds**: `claude-broker` (cloud-driven broker), `claude-rc` (interactive `claude` REPL with `/rc`), and `shell` (plain login bash). Default is `claude-rc`
 - **Bootstrap `claude remote-control`** in the shed workspace (`SHED_WORKSPACE`) of any running shed (or in a configured workdir on a machine) over SSH + tmux
 - **In-browser xterm.js terminal** that attaches to the underlying tmux session over a WebSocket, with PTY resize and keep-alive
 - **Actionable state surface**: `starting`, `ready`, `reconnecting`, `needs-trust`, `needs-auth`, `dead` — no more guessing why a session isn't connected

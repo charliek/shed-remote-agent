@@ -60,10 +60,14 @@ rc.post('/:host/:name/rc', async (c) => {
   // when the shed predates the env var.
   const workdir = body.workdir ?? (await resolveShedWorkdir(target)) ?? DEFAULT_WORKDIR;
 
-  // claude (repl/agent) gates on a first-run workspace-trust prompt. Pre-seed the
-  // trust for the workdir before launch (best-effort), and arm a send-keys accept
-  // as the fallback during probing, so a fresh session reaches `ready` unattended.
+  // claude kinds (claude-rc/claude-broker) gate on a first-run workspace-trust
+  // prompt. Pre-seed the trust for the workdir before launch (best-effort), and arm a
+  // send-keys accept as the fallback during probing, so a fresh session reaches
+  // `ready` unattended.
   const isClaudeKind = kind !== 'shell';
+  // Kinds whose pane accepts a typed kickoff line: claude-rc (a prompt) and shell (a
+  // command). claude-broker's input is the remote URL, not the pane.
+  const acceptsTypedInput = kind !== 'claude-broker';
   if (isClaudeKind) await preseedTrust(target, workdir);
 
   const {
@@ -91,9 +95,9 @@ rc.post('/:host/:name/rc', async (c) => {
     acceptTrust: isClaudeKind ? () => sendTrustAccept(target, tmuxSession) : undefined,
   });
 
-  // Type the kickoff prompt only once the repl is ready (its pane is the live
-  // Claude REPL). Skipped for agent (input is remote) / shell, or if not ready.
-  if (body.initial_prompt && kind === 'repl' && state.state === 'ready') {
+  // Type the kickoff line once the session is ready: for claude-rc it's a prompt
+  // into the live REPL; for shell it's a command to run.
+  if (body.initial_prompt && acceptsTypedInput && state.state === 'ready') {
     await sendInitialPrompt(target, tmuxSession, body.initial_prompt);
   }
 

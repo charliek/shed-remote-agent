@@ -3,13 +3,13 @@ import { useEffect } from 'react';
 
 const OPTIONS: { value: RcKind; label: string; hint: string }[] = [
   {
-    value: 'agent',
-    label: 'agent',
+    value: 'claude-broker',
+    label: 'claude-broker',
     hint: 'claude remote-control broker',
   },
   {
-    value: 'repl',
-    label: 'repl',
+    value: 'claude-rc',
+    label: 'claude-rc',
     hint: 'live claude REPL with /rc',
   },
   {

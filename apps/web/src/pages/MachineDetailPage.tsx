@@ -11,7 +11,7 @@ import { Badge, Button, Card, EmptyState, PageShell } from '@/components/ui';
 import { type APIError, api } from '@/lib/api';
 import { toastForRcCreate } from '@/lib/rcCreateToast';
 
-const ALLOWED_KINDS: RcKind[] = ['repl', 'shell'];
+const ALLOWED_KINDS: RcKind[] = ['claude-rc', 'shell'];
 
 export default function MachineDetailPage() {
   const { machine = '' } = useParams();

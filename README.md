@@ -16,7 +16,7 @@ Designed to live behind Tailscale — there is no auth layer.
 - Bootstraps `claude remote-control` (or `claude /rc`, or a plain shell) in
   the shed workspace (`SHED_WORKSPACE`) of any running shed (or a configured `workdir` on a machine) by
   launching it inside a detached tmux session named `rc-<slug>`
-- Three RC kinds — `agent`, `repl`, `shell` — pickable per session
+- Three RC kinds — `claude-broker`, `claude-rc`, `shell` — pickable per session
 - Attaches an in-browser xterm.js terminal to any session over a WebSocket
 - Shows the generated `https://claude.ai/code?environment=env_...` /
   `claude.ai/code/session_...` URL with Copy/Open buttons
@@ -138,7 +138,7 @@ Implemented phases:
 5. Create shed with streaming SSE progress
 6. Remote-control bootstrap, probe, kill; RC UI
 7. Polish: error states, filter inputs, mobile layout, SSE parser tests
-8. RC session kinds (`agent`/`repl`/`shell`) with per-session picker
+8. RC session kinds (`claude-broker`/`claude-rc`/`shell`) with per-session picker
 9. In-browser xterm.js terminal attach over WebSocket
 10. Native machines as RC targets (`machines:` config block, parallel `/api/machines/...` endpoints)
 11. `type: local` machines (no-SSH path for the orchestrator host itself)
@@ -150,7 +150,7 @@ Post-MVP (explicitly not built):
 - Web-driven `claude auth login`
 - Host add/edit flow (edit `~/.shed/config.yaml` directly for now)
 
-A repl/agent session now clears Claude Code's first-run workspace-trust prompt
-automatically: it pre-seeds the workdir as trusted in `~/.claude.json` before
+A claude-rc/claude-broker session now clears Claude Code's first-run workspace-trust
+prompt automatically: it pre-seeds the workdir as trusted in `~/.claude.json` before
 launch and, as a fallback, accepts the prompt over tmux. So a fresh session
 reaches `ready` unattended without the old "attach, run `claude`, accept" step.
