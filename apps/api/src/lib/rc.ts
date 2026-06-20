@@ -14,23 +14,9 @@ import { shellQuote } from './shell.js';
 import { type CommandTarget, classifySSHError, run } from './ssh.js';
 
 export const RC_PREFIX = 'rc-';
+// DEFAULT_WORKDIR is the fallback when a shed session's SHED_RC_WORKDIR is unset
+// (a legacy/unmanaged session). For sheds, shed-ext-rc resolves $SHED_WORKSPACE.
 export const DEFAULT_WORKDIR = '/workspace';
-
-/**
- * sh snippet (run as `sh -c <script> _ <workdir>`) that marks `<workdir>` trusted
- * in Claude Code's config so the first-run workspace-trust prompt never appears.
- * It merges (never clobbers, to preserve OAuth/MCP state) into
- * `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` via jq, writing atomically. Verified
- * on claude 2.1.178. `\$` escapes keep these as shell/jq tokens, not TS interpolation.
- */
-const PRESEED_TRUST_SCRIPT =
-  `f="\${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"; d="$1"; ` +
-  `mkdir -p "$(dirname "$f")" 2>/dev/null || true; tmp="$f.sra-tmp.$$"; ` +
-  `if [ -s "$f" ]; then cat "$f"; else echo '{}'; fi | ` +
-  `jq --arg d "$d" '.projects[$d].hasTrustDialogAccepted = true' > "$tmp" 2>/dev/null; ` +
-  // Only install the temp if it's valid JSON — never replace .claude.json with
-  // empty/partial output (POSIX sh has no pipefail to catch a failed `cat`).
-  `if jq -e . "$tmp" >/dev/null 2>&1; then mv "$tmp" "$f"; else rm -f "$tmp" 2>/dev/null; fi`;
 
 /** Re-export the convention schema version (owned by @shed-remote-agent/shared,
  * stamped into SHED_RC_V). v2 for the kind rename. */
@@ -75,7 +61,7 @@ const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 // Alphabet chosen to avoid visually-confusable characters so short slugs
 // survive a human reading a QR or typed URL.
-function genSlug(): string {
+export function genSlug(): string {
   const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
   let s = '';
   for (let i = 0; i < 6; i += 1) {
@@ -360,95 +346,10 @@ export async function probe(opts: {
   return classifyPane(opts.kind, result.stdout);
 }
 
-/**
- * Resolve a shed's RC working directory from the live `SHED_WORKSPACE` env var
- * (the shed's landing dir — `/home/shed` or `/home/shed/<proj>` for a
- * repo/local-dir shed). Recent sheds no longer have a static `/workspace`.
- *
- * Returns the dir, or `undefined` when the var is unset (an old shed → the
- * caller falls back to {@link DEFAULT_WORKDIR}). A *transport* failure (we
- * couldn't reach the shed at all) throws rather than silently misplacing the
- * session in a `/workspace` that may not exist. `runner` is injectable for tests.
- */
-export async function resolveShedWorkdir(
-  target: CommandTarget,
-  runner: typeof run = run,
-): Promise<string | undefined> {
-  const res = await runner(target, ['printenv', 'SHED_WORKSPACE'], { timeoutMs: 5_000 });
-  if (res.code === 0) {
-    const dir = res.stdout.trim();
-    // Empty or control-char-laden value: ignore and fall back rather than feed
-    // garbage into `tmux -c` / `SHED_RC_WORKDIR`.
-    return dir && !hasControlChars(dir) ? dir : undefined;
-  }
-  // `printenv VAR` exits with EXACTLY 1 when the var is unset — that's an old
-  // shed, not an error, so fall back. Any other non-zero code is an SSH/transport
-  // failure (255 connection closed, 124 timeout, …) which we must NOT mistake for
-  // "old shed" — otherwise we'd silently place the session in a `/workspace` that
-  // doesn't exist on a recent shed. Surface it (auth→401 like bootstrap, else 502).
-  if (res.code === 1) return undefined;
-  const cls = classifySSHError(res.stderr, res.code);
-  if (cls === 'auth-denied') {
-    throw new AppError('SSH_AUTH_DENIED', 'ssh auth denied resolving shed workspace', 401);
-  }
-  throw new AppError('SSH_UNREACHABLE', `could not resolve shed workspace (${cls})`, 502);
-}
-
-/**
- * Best-effort: pre-accept Claude Code's workspace-trust for `workdir` before
- * launch, so a fresh repl/agent reaches `ready` without the manual trust step.
- * Never throws — if the merge fails (no `jq`, odd config layout, …) the
- * send-keys fallback in {@link probeUntilReady} still accepts the prompt.
- */
-export async function preseedTrust(
-  target: CommandTarget,
-  workdir: string,
-  runner: typeof run = run,
-): Promise<void> {
-  try {
-    await runner(target, ['sh', '-c', PRESEED_TRUST_SCRIPT, '_', workdir], { timeoutMs: 5_000 });
-  } catch {
-    // ignore — the interactive accept covers any pre-seed failure.
-  }
-}
-
-/**
- * Accept the first-run trust prompt by pressing Enter (the "1. Yes, I trust this
- * folder" option is pre-selected). Best-effort — used as `probeUntilReady`'s
- * `acceptTrust` fallback when the pre-seed didn't take.
- */
-export async function sendTrustAccept(
-  target: CommandTarget,
-  tmuxSession: string,
-  runner: typeof run = run,
-): Promise<void> {
-  try {
-    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, 'Enter'], { timeoutMs: 5_000 });
-  } catch {
-    // best-effort; probeUntilReady surfaces needs-trust if it didn't clear.
-  }
-}
-
-/**
- * Type a kickoff line into a ready `claude-rc` (prompt) or `shell` (command) session
- * and submit it. Best-effort — the session is the deliverable; a failed send must not
- * fail the create. `-l` sends it literally (not as tmux key names); Enter submits.
- */
-export async function sendInitialPrompt(
-  target: CommandTarget,
-  tmuxSession: string,
-  prompt: string,
-  runner: typeof run = run,
-): Promise<void> {
-  try {
-    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, '-l', prompt], {
-      timeoutMs: 5_000,
-    });
-    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, 'Enter'], { timeoutMs: 5_000 });
-  } catch {
-    // best-effort.
-  }
-}
+// NOTE: workspace-trust pre-seeding, $SHED_WORKSPACE resolution, and prompt
+// delivery for SHED sessions now live in the `shed-ext-rc` guest binary (invoked
+// via apps/api/src/lib/shedRc.ts). The machine path keeps the inline bootstrap
+// below. The pane classifier and tmux primitives are shared by both.
 
 function extractUrl(kind: RcKind, pane: string): string | undefined {
   if (kind === 'claude-broker') {
