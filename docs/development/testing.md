@@ -13,7 +13,7 @@ Currently 47 tests across 7 files, covering the load-bearing pure logic and the 
 | `apps/api/src/lib/__tests__/shedConfig.test.ts` | `~/.shed/config.yaml` parsing + `hostsFromConfig` camelCase mapping |
 | `apps/api/src/lib/__tests__/appConfig.test.ts` | `~/.config/shed-remote-agent/config.yaml` parsing, `resolveLocalDir` precedence, the `machines[]` discriminated union (ssh / local / type defaulting / strict rejection) |
 | `apps/api/src/lib/__tests__/rc.test.ts` | `classifyPane` on real pane captures across all three kinds (ready, reconnecting, needs-trust, needs-auth, starting) |
-| `apps/api/src/lib/__tests__/rcInnerCommand.test.ts` | `buildInnerCommand` for `agent` / `repl` / `shell` with and without the `interactiveShell` wrap |
+| `apps/api/src/lib/__tests__/rcInnerCommand.test.ts` | `buildInnerCommand` for `claude-broker` / `claude-rc` / `shell` with and without the `interactiveShell` wrap |
 | `apps/api/src/lib/__tests__/rcAttach.test.ts` | `parseControlMessage` — accepts well-formed resize frames; rejects malformed JSON, wrong types, out-of-range dimensions |
 | `apps/api/src/lib/__tests__/exec.test.ts` | `run({ kind: 'local' }, …)` — stdout capture, quoting parity with the SSH wire format, exit codes, stdin piping, timeout sentinel (124) |
 | `apps/api/src/lib/__tests__/shedClient.test.ts` | `parseSSEStream` — chunked input, comment lines, multi-line `data:`, trailing-event flush |
@@ -53,7 +53,7 @@ For the UI, start `bun run dev` and click through:
 1. Load `/` — sheds list renders with host badges; a **Machines** section appears if `machines:` is configured
 2. Create a shed — progress stream updates live
 3. Shed detail — start/stop/delete buttons, RC panel
-4. Create a remote-control session — pick a kind (`agent`/`repl`/`shell`); URL appears within ~5 s for `agent`/`repl` on a healthy target
+4. Create a remote-control session — pick a kind (`claude-broker`/`claude-rc`/`shell`); URL appears within ~5 s for `claude-broker`/`claude-rc` on a healthy target
 5. Attach in the browser — xterm.js should connect over WS and stream the pane
 6. Open a configured machine (SSH or local) — same RC panel; verify the `local` badge appears on local entries
 7. Kill the session — card disappears on next poll (within ~10 s)

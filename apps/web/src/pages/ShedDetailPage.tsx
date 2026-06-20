@@ -11,7 +11,7 @@ import { Badge, Button, Card, EmptyState, PageShell, StatusPill } from '@/compon
 import { type APIError, api } from '@/lib/api';
 import { toastForRcCreate } from '@/lib/rcCreateToast';
 
-const SHED_ALLOWED_KINDS: RcKind[] = ['repl', 'shell'];
+const SHED_ALLOWED_KINDS: RcKind[] = ['claude-rc', 'shell'];
 
 export default function ShedDetailPage() {
   const { host = '', name = '' } = useParams();
@@ -99,13 +99,29 @@ export default function ShedDetailPage() {
     setDisplayName('');
     setInitialPrompt('');
   }, [host, name]);
+  // Kinds whose pane accepts a typed kickoff line: claude-rc (a prompt) and shell
+  // (a command). claude-broker's input is the remote URL, not the pane.
+  const acceptsTypedInput = rcKind !== 'claude-broker';
+  // Presentation for the kickoff-line field, keyed off the kind.
+  const promptUi =
+    rcKind === 'shell'
+      ? {
+          label: 'Initial command',
+          placeholder: 'e.g. npm install && npm test',
+          help: 'Run in the shell once it’s ready.',
+        }
+      : {
+          label: 'Initial prompt',
+          placeholder: 'e.g. summarize this repo and suggest next steps',
+          help: 'Typed into the REPL once it’s ready.',
+        };
+
   const newRcM = useMutation({
     mutationFn: () =>
       api.createRcSession(host, name, {
         kind: rcKind,
         display_name: displayName.trim() || undefined,
-        // Only a repl pane takes typed input; ignore the prompt for other kinds.
-        initial_prompt: (rcKind === 'repl' && initialPrompt.trim()) || undefined,
+        initial_prompt: (acceptsTypedInput && initialPrompt.trim()) || undefined,
       }),
     onSuccess: (s) => {
       toastForRcCreate(s);
@@ -289,13 +305,13 @@ export default function ShedDetailPage() {
                     allowedKinds={SHED_ALLOWED_KINDS}
                   />
                 </div>
-                {rcKind === 'repl' && (
+                {acceptsTypedInput && (
                   <div className="space-y-1">
                     <label
                       htmlFor="rc-initial-prompt"
                       className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
                     >
-                      Initial prompt <span className="text-faint normal-case">· optional</span>
+                      {promptUi.label} <span className="text-faint normal-case">· optional</span>
                     </label>
                     <input
                       id="rc-initial-prompt"
@@ -305,11 +321,11 @@ export default function ShedDetailPage() {
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') closeNewSession();
                       }}
-                      placeholder="e.g. summarize this repo and suggest next steps"
+                      placeholder={promptUi.placeholder}
                       className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       disabled={newRcM.isPending}
                     />
-                    <p className="text-faint text-xs">Typed into the REPL once it's ready.</p>
+                    <p className="text-faint text-xs">{promptUi.help}</p>
                   </div>
                 )}
                 <div className="flex justify-end gap-2">

@@ -9,8 +9,8 @@ import { cn } from '@/lib/cn';
 import { Button, Card } from './ui';
 
 const kindInfo: Record<RcKind, { label: string; tone: string }> = {
-  agent: { label: 'agent', tone: 'bg-ochre-soft text-ochre' },
-  repl: { label: 'repl', tone: 'bg-primary-soft text-primary' },
+  'claude-broker': { label: 'claude-broker', tone: 'bg-ochre-soft text-ochre' },
+  'claude-rc': { label: 'claude-rc', tone: 'bg-primary-soft text-primary' },
   shell: { label: 'shell', tone: 'bg-secondary text-muted-foreground' },
 };
 

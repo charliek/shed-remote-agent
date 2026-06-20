@@ -17,7 +17,7 @@ import {
 const META: RcMetadata = {
   id: '9f1c0e7a-1111-4222-8333-444455556666',
   displayName: 'charliek/abc234',
-  kind: 'agent',
+  kind: 'claude-broker',
   workdir: '/workspace',
   createdBy: 'shed-remote-agent/0.1.0',
   createdAt: '2026-06-13T19:20:00Z',
@@ -28,7 +28,7 @@ const renderDump = (pairs: Array<[string, string]>): string =>
   pairs.map(([k, v]) => `${k}=${v}`).join('\n');
 
 describe('rcMetaEnv / buildRcEnvArgs', () => {
-  it('emits all required v1 keys with the schema version', () => {
+  it('emits all required v2 keys with the schema version', () => {
     const pairs = rcMetaEnv(META);
     const keys = pairs.map(([k]) => k);
     expect(keys).toEqual([
@@ -78,7 +78,7 @@ describe('parseRcEnv', () => {
 });
 
 describe('parseRcSession — round-trip', () => {
-  it('recovers all v1 metadata written by rcMetaEnv', () => {
+  it('recovers all v2 metadata written by rcMetaEnv', () => {
     const r = parseRcSession({
       tmuxSession: 'rc-abc234',
       envDump: renderDump(rcMetaEnv({ ...META, target: 'shed:s@h' })),
@@ -86,7 +86,7 @@ describe('parseRcSession — round-trip', () => {
     });
     expect(r.slug).toBe('abc234');
     expect(r.managed).toBe(true);
-    expect(r.kind).toBe('agent');
+    expect(r.kind).toBe('claude-broker');
     expect(r.display_name).toBe('charliek/abc234');
     expect(r.workdir).toBe('/workspace');
     expect(r.id).toBe(META.id);
@@ -114,7 +114,7 @@ describe('parseRcSession — legacy / malformed / forward-compat', () => {
       displayNameFallback: (slug) => `my-shed/${slug}`,
     });
     expect(r.managed).toBe(false);
-    expect(r.kind).toBe('agent'); // legacy default, NOT the create default (repl)
+    expect(r.kind).toBe('claude-broker'); // legacy default, NOT the create default (claude-rc)
     expect(r.display_name).toBe('my-shed/legacy');
     expect(r.workdir).toBeUndefined();
     expect(r.id).toBeUndefined();
@@ -129,7 +129,7 @@ describe('parseRcSession — legacy / malformed / forward-compat', () => {
 
   it('drops a malformed SHED_RC_CREATED_AT rather than surfacing it', () => {
     const env = renderDump([
-      ['SHED_RC_V', '1'],
+      ['SHED_RC_V', '2'],
       ['SHED_RC_ID', META.id],
       ['SHED_RC_CREATED_AT', 'not-a-timestamp'],
     ]);
@@ -154,14 +154,16 @@ describe('parseRcSession — legacy / malformed / forward-compat', () => {
     expect(r.managed).toBe(false);
     // Unmanaged sessions get legacy defaults — the stray SHED_RC_* values are
     // not under a known version and must NOT be trusted.
-    expect(r.kind).toBe('agent'); // not the stray 'shell'
+    expect(r.kind).toBe('claude-broker'); // not the stray 'shell'
     expect(r.display_name).toBe('fb/x'); // not 'spoof'
     expect(r.workdir).toBeUndefined(); // not '/tmp'
     expect(r.id).toBeUndefined(); // not the stray id
   });
 
-  it('treats non-canonical version spellings (1.0, 1e3) as legacy', () => {
-    for (const v of ['1.0', '1e3', '0x1', '0', '']) {
+  it('treats non-canonical or pre-v2 versions (1, 1.0, 1e3) as legacy', () => {
+    // '1' is a valid integer but below the v2 floor → unmanaged (the v1 kind
+    // grammar is no longer understood). The rest are non-canonical spellings.
+    for (const v of ['1', '1.0', '1e3', '0x1', '0', '']) {
       const r = parseRcSession({
         tmuxSession: 'rc-x',
         envDump: renderDump([['SHED_RC_V', v]]),
@@ -173,15 +175,15 @@ describe('parseRcSession — legacy / malformed / forward-compat', () => {
 
   it('keeps a higher (future) SHED_RC_V as managed and ignores unknown keys', () => {
     const env = renderDump([
-      ['SHED_RC_V', '2'],
+      ['SHED_RC_V', '3'],
       ['SHED_RC_ID', META.id],
-      ['SHED_RC_KIND', 'repl'],
+      ['SHED_RC_KIND', 'claude-rc'],
       ['SHED_RC_OWNER', 'user:charlie'],
       ['SHED_RC_FUTURE', 'whatever'],
     ]);
     const r = parseRcSession({ tmuxSession: 'rc-x', envDump: env, pane: '' });
     expect(r.managed).toBe(true);
-    expect(r.kind).toBe('repl');
+    expect(r.kind).toBe('claude-rc');
     // Unknown/reserved keys are not surfaced on the wire shape.
     expect(Object.keys(r)).not.toContain('owner');
   });
@@ -226,7 +228,7 @@ describe('parseListOutput', () => {
     const stdout = [
       `${MARKERS.session} rc-evil`,
       MARKERS.env,
-      'SHED_RC_V=1',
+      'SHED_RC_V=2',
       `SHED_RC_ID=${META.id}`,
       // A display name equal to the pane-marker text must be kept as a value,
       // not treated as the delimiter (markers are matched as whole lines).
@@ -271,7 +273,7 @@ describe('provenance constants', () => {
     expect(RC_TOOL_NAME).toBe('shed-remote-agent');
     expect(RC_CREATED_BY.startsWith('shed-remote-agent/')).toBe(true);
     expect(RC_CREATED_BY.startsWith('api/')).toBe(false);
-    expect(RC_SCHEMA_VERSION).toBe(1);
+    expect(RC_SCHEMA_VERSION).toBe(2);
   });
 });
 

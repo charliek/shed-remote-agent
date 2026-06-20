@@ -141,7 +141,7 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
   "slug": "demo",
   "display_name": "my-shed/demo",
   "workdir": "/home/shed",
-  "kind": "repl",
+  "kind": "claude-rc",
   "initial_prompt": "summarize this repo and suggest next steps"
 }
 ```
@@ -150,9 +150,9 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
 |-------|---------|-------|
 | `slug` | auto-generated (6 confusable-free chars) | Must match `^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$` |
 | `display_name` | `<shed>/<slug>` or `<machine>/<slug>` | Stored in tmux env (`SHED_RC_DISPLAY_NAME`) and passed as `--name` to `claude`. Must be single-line (no control characters). |
-| `workdir` | resolved from the shed's `SHED_WORKSPACE` for sheds (`/workspace` on older sheds); the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`). An explicit value wins over the resolved default. |
-| `kind` | `repl` | One of `agent`, `repl`, `shell`. See [Remote Control → Session kinds](remote-control.md#session-kinds). |
-| `initial_prompt` | none | Optional single-line prompt typed into the session once it is `ready`. Applied **only** to `kind: repl` (an `agent`'s input is the remote URL, not the pane; `shell` has none); ignored otherwise. Best-effort. Control characters (incl. newlines) are rejected. |
+| `workdir` | resolved from the shed's `SHED_WORKSPACE` for sheds; the machine's `workdir` for machines (`~` fallback) | Working dir for the tmux session (`-c`). An explicit value wins over the resolved default. |
+| `kind` | `claude-rc` | One of `claude-broker`, `claude-rc`, `shell`. See [Remote Control → Session kinds](remote-control.md#session-kinds). |
+| `initial_prompt` | none | Optional single line typed into the session once it is `ready`, then submitted. For `claude-rc` it's a prompt; for `shell` it's a command. Not applied to `claude-broker` (its input is the remote URL, not the pane); ignored otherwise. Best-effort. Control characters (incl. newlines) are rejected. |
 
 ### Bootstrap response
 
@@ -162,7 +162,7 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
   "tmux_session": "rc-abc123",
   "display_name": "my-shed/abc123",
   "workdir": "/home/shed",
-  "kind": "repl",
+  "kind": "claude-rc",
   "state": "ready",
   "url": "https://claude.ai/code/session_01ABC...",
   "target": { "kind": "shed", "shed_name": "my-shed", "host": "localhost-dev" },
@@ -174,7 +174,7 @@ RC endpoints exist in two parallel namespaces — one rooted at sheds, one roote
 }
 ```
 
-For machine targets, `target` is `{ "kind": "machine", "machine_name": "<name>" }`. `url` is only populated for `agent` and `repl` kinds once the pane reaches `ready`; `shell` sessions never produce a URL.
+For machine targets, `target` is `{ "kind": "machine", "machine_name": "<name>" }`. `url` is only populated for `claude-broker` and `claude-rc` kinds once the pane reaches `ready`; `shell` sessions never produce a URL.
 
 The `id`, `created_by`, `created_at`, `target_label`, and `managed` fields come from the [RC Session Convention](rc-session-convention.md) metadata stored in the tmux session. They are absent (or `managed: false`) for legacy/unmanaged `rc-*` sessions created before the convention.
 

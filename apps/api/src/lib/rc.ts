@@ -1,6 +1,8 @@
 import {
   DEFAULT_RC_KIND,
   hasControlChars,
+  MIN_MANAGED_RC_VERSION,
+  RC_SCHEMA_VERSION,
   type RcKind,
   type RcSession,
   type RcState,
@@ -12,27 +14,13 @@ import { shellQuote } from './shell.js';
 import { type CommandTarget, classifySSHError, run } from './ssh.js';
 
 export const RC_PREFIX = 'rc-';
+// DEFAULT_WORKDIR is the fallback when a shed session's SHED_RC_WORKDIR is unset
+// (a legacy/unmanaged session). For sheds, shed-ext-rc resolves $SHED_WORKSPACE.
 export const DEFAULT_WORKDIR = '/workspace';
 
-/**
- * sh snippet (run as `sh -c <script> _ <workdir>`) that marks `<workdir>` trusted
- * in Claude Code's config so the first-run workspace-trust prompt never appears.
- * It merges (never clobbers, to preserve OAuth/MCP state) into
- * `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` via jq, writing atomically. Verified
- * on claude 2.1.178. `\$` escapes keep these as shell/jq tokens, not TS interpolation.
- */
-const PRESEED_TRUST_SCRIPT =
-  `f="\${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"; d="$1"; ` +
-  `mkdir -p "$(dirname "$f")" 2>/dev/null || true; tmp="$f.sra-tmp.$$"; ` +
-  `if [ -s "$f" ]; then cat "$f"; else echo '{}'; fi | ` +
-  `jq --arg d "$d" '.projects[$d].hasTrustDialogAccepted = true' > "$tmp" 2>/dev/null; ` +
-  // Only install the temp if it's valid JSON — never replace .claude.json with
-  // empty/partial output (POSIX sh has no pipefail to catch a failed `cat`).
-  `if jq -e . "$tmp" >/dev/null 2>&1; then mv "$tmp" "$f"; else rm -f "$tmp" 2>/dev/null; fi`;
-
-/** Schema version stamped into SHED_RC_V. Bumped only for breaking changes
- * (additive keys do not bump it). See docs/reference/rc-session-convention.md. */
-export const RC_SCHEMA_VERSION = 1;
+/** Re-export the convention schema version (owned by @shed-remote-agent/shared,
+ * stamped into SHED_RC_V). v2 for the kind rename. */
+export { RC_SCHEMA_VERSION };
 /** Stable tool identifier for SHED_RC_CREATED_BY. MUST NOT contain '/'. */
 export const RC_TOOL_NAME = 'shed-remote-agent';
 /** `<tool>/<version>` provenance string. The version is read from this package's
@@ -73,7 +61,7 @@ const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 // Alphabet chosen to avoid visually-confusable characters so short slugs
 // survive a human reading a QR or typed URL.
-function genSlug(): string {
+export function genSlug(): string {
   const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
   let s = '';
   for (let i = 0; i < 6; i += 1) {
@@ -109,7 +97,7 @@ export interface RcMetadata {
 
 /**
  * Raw, unescaped SHED_RC_* key/value pairs in deterministic order. The single
- * source of truth for the metadata a managed RC session carries (v1).
+ * source of truth for the metadata a managed RC session carries (v2).
  */
 export function rcMetaEnv(meta: RcMetadata): Array<[string, string]> {
   const pairs: Array<[string, string]> = [
@@ -167,7 +155,10 @@ function normalizeCreatedAt(raw: string | undefined): string | undefined {
 function isManagedVersion(raw: string | undefined): boolean {
   // Strictly a canonical positive integer — reject exotic numeric spellings
   // (1e3, 0x1, 1.0, +1) so foreign/hostile input matches the spec's grammar.
-  return raw !== undefined && /^\d+$/.test(raw) && Number(raw) >= 1;
+  // Managed iff >= the reader's floor: a v1 session (SHED_RC_V=1, old kind
+  // grammar) is unmanaged/foreign; a version above the floor (incl. a future
+  // one) is managed — known fields rendered, session never dropped.
+  return raw !== undefined && /^\d+$/.test(raw) && Number(raw) >= MIN_MANAGED_RC_VERSION;
 }
 
 /** tmux refuses to create a session whose name already exists. A caller-supplied
@@ -186,12 +177,12 @@ export function isMissingSessionError(stderr: string): boolean {
 
 /**
  * Builds the inner command the tmux session runs. Three shapes:
- *   agent  – the today's broker, hosts up to 32 cloud-driven sessions.
- *   repl   – an interactive `claude` REPL with `/rc` enabled on top, so the
- *            live conversation is what attachers see.
- *   shell  – a plain login bash; used for ad-hoc terminal access.
+ *   claude-broker – the broker, hosts up to 32 cloud-driven sessions.
+ *   claude-rc     – an interactive `claude` REPL with `/rc` enabled on top, so the
+ *                   live conversation is what attachers see.
+ *   shell         – a plain login bash; used for ad-hoc terminal access.
  *
- * When `interactiveShell` is true, repl/agent are wrapped in `bash -ic` so
+ * When `interactiveShell` is true, the claude kinds are wrapped in `bash -ic` so
  * the user's ~/.bashrc runs and PATH-mutating tools like nvm/asdf/pnpm are
  * picked up before claude is exec'd. Needed on native machines where claude
  * lives under e.g. ~/.nvm/.../bin/claude rather than /usr/local/bin.
@@ -203,9 +194,9 @@ export function buildInnerCommand(
 ): string {
   const cmd = (() => {
     switch (kind) {
-      case 'agent':
+      case 'claude-broker':
         return `claude remote-control --name ${shellQuote(displayName)} --spawn same-dir`;
-      case 'repl':
+      case 'claude-rc':
         return `claude --name ${shellQuote(displayName)} /rc`;
       case 'shell':
         return 'bash -l';
@@ -355,101 +346,16 @@ export async function probe(opts: {
   return classifyPane(opts.kind, result.stdout);
 }
 
-/**
- * Resolve a shed's RC working directory from the live `SHED_WORKSPACE` env var
- * (the shed's landing dir — `/home/shed` or `/home/shed/<proj>` for a
- * repo/local-dir shed). Recent sheds no longer have a static `/workspace`.
- *
- * Returns the dir, or `undefined` when the var is unset (an old shed → the
- * caller falls back to {@link DEFAULT_WORKDIR}). A *transport* failure (we
- * couldn't reach the shed at all) throws rather than silently misplacing the
- * session in a `/workspace` that may not exist. `runner` is injectable for tests.
- */
-export async function resolveShedWorkdir(
-  target: CommandTarget,
-  runner: typeof run = run,
-): Promise<string | undefined> {
-  const res = await runner(target, ['printenv', 'SHED_WORKSPACE'], { timeoutMs: 5_000 });
-  if (res.code === 0) {
-    const dir = res.stdout.trim();
-    // Empty or control-char-laden value: ignore and fall back rather than feed
-    // garbage into `tmux -c` / `SHED_RC_WORKDIR`.
-    return dir && !hasControlChars(dir) ? dir : undefined;
-  }
-  // `printenv VAR` exits with EXACTLY 1 when the var is unset — that's an old
-  // shed, not an error, so fall back. Any other non-zero code is an SSH/transport
-  // failure (255 connection closed, 124 timeout, …) which we must NOT mistake for
-  // "old shed" — otherwise we'd silently place the session in a `/workspace` that
-  // doesn't exist on a recent shed. Surface it (auth→401 like bootstrap, else 502).
-  if (res.code === 1) return undefined;
-  const cls = classifySSHError(res.stderr, res.code);
-  if (cls === 'auth-denied') {
-    throw new AppError('SSH_AUTH_DENIED', 'ssh auth denied resolving shed workspace', 401);
-  }
-  throw new AppError('SSH_UNREACHABLE', `could not resolve shed workspace (${cls})`, 502);
-}
-
-/**
- * Best-effort: pre-accept Claude Code's workspace-trust for `workdir` before
- * launch, so a fresh repl/agent reaches `ready` without the manual trust step.
- * Never throws — if the merge fails (no `jq`, odd config layout, …) the
- * send-keys fallback in {@link probeUntilReady} still accepts the prompt.
- */
-export async function preseedTrust(
-  target: CommandTarget,
-  workdir: string,
-  runner: typeof run = run,
-): Promise<void> {
-  try {
-    await runner(target, ['sh', '-c', PRESEED_TRUST_SCRIPT, '_', workdir], { timeoutMs: 5_000 });
-  } catch {
-    // ignore — the interactive accept covers any pre-seed failure.
-  }
-}
-
-/**
- * Accept the first-run trust prompt by pressing Enter (the "1. Yes, I trust this
- * folder" option is pre-selected). Best-effort — used as `probeUntilReady`'s
- * `acceptTrust` fallback when the pre-seed didn't take.
- */
-export async function sendTrustAccept(
-  target: CommandTarget,
-  tmuxSession: string,
-  runner: typeof run = run,
-): Promise<void> {
-  try {
-    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, 'Enter'], { timeoutMs: 5_000 });
-  } catch {
-    // best-effort; probeUntilReady surfaces needs-trust if it didn't clear.
-  }
-}
-
-/**
- * Type a kickoff `prompt` into a ready `repl` session and submit it. Best-effort
- * — the session is the deliverable; a failed prompt-send must not fail the create.
- * `-l` sends the prompt literally (not as tmux key names); a separate Enter submits.
- */
-export async function sendInitialPrompt(
-  target: CommandTarget,
-  tmuxSession: string,
-  prompt: string,
-  runner: typeof run = run,
-): Promise<void> {
-  try {
-    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, '-l', prompt], {
-      timeoutMs: 5_000,
-    });
-    await runner(target, ['tmux', 'send-keys', '-t', tmuxSession, 'Enter'], { timeoutMs: 5_000 });
-  } catch {
-    // best-effort.
-  }
-}
+// NOTE: workspace-trust pre-seeding, $SHED_WORKSPACE resolution, and prompt
+// delivery for SHED sessions now live in the `shed-ext-rc` guest binary (invoked
+// via apps/api/src/lib/shedRc.ts). The machine path keeps the inline bootstrap
+// below. The pane classifier and tmux primitives are shared by both.
 
 function extractUrl(kind: RcKind, pane: string): string | undefined {
-  if (kind === 'agent') {
+  if (kind === 'claude-broker') {
     return pane.match(/https?:\/\/claude\.ai\/code\?environment=env_[A-Za-z0-9_-]+/)?.[0];
   }
-  if (kind === 'repl') {
+  if (kind === 'claude-rc') {
     return pane.match(/https?:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+/)?.[0];
   }
   return undefined;
@@ -475,16 +381,16 @@ export function classifyPane(kind: RcKind, pane: string): { state: RcState; url?
     }
   }
 
-  if (kind === 'agent') {
-    const url = extractUrl('agent', pane);
+  if (kind === 'claude-broker') {
+    const url = extractUrl('claude-broker', pane);
     if (/\bReconnecting\b/.test(pane)) return { state: 'reconnecting', url };
     if (/\bConnected\b/.test(pane) && url) return { state: 'ready', url };
     if (url) return { state: 'ready', url };
     return { state: 'starting' };
   }
 
-  if (kind === 'repl') {
-    const url = extractUrl('repl', pane);
+  if (kind === 'claude-rc') {
+    const url = extractUrl('claude-rc', pane);
     if (/Remote Control connecting/i.test(pane) && !url) return { state: 'starting' };
     if (/Remote Control active/i.test(pane) && url) return { state: 'ready', url };
     if (url) return { state: 'ready', url };
@@ -497,11 +403,12 @@ export function classifyPane(kind: RcKind, pane: string): { state: RcState; url?
 }
 
 function parseKind(raw: string): RcKind {
-  if (raw === 'agent' || raw === 'repl' || raw === 'shell') return raw;
-  // Legacy/unmanaged sessions (no SHED_RC_KIND) predate the field and were all
-  // agents — default to `agent`. NOTE: this is intentionally different from the
-  // create-time default (DEFAULT_RC_KIND = 'repl').
-  return 'agent';
+  if (raw === 'claude-broker' || raw === 'claude-rc' || raw === 'shell') return raw;
+  // Unrecognized kind value (an old `agent`/`repl`, or anything foreign) under
+  // v2: default to `claude-broker` — the renamed analog of the pre-convention
+  // default (sessions were all brokers). Intentionally different from the
+  // create-time default (DEFAULT_RC_KIND = 'claude-rc').
+  return 'claude-broker';
 }
 
 export interface RawRcSession {
@@ -562,11 +469,11 @@ export function parseRcSession(input: ParseRcSessionInput): RawRcSession {
   const env = parseRcEnv(input.envDump);
   const slug = input.tmuxSession.slice(RC_PREFIX.length);
 
-  // Legacy/unmanaged: no valid SHED_RC_V. Any stray SHED_RC_* values are not
-  // under a known schema version, so ignore them and apply legacy defaults
-  // (kind=agent, fallback display name, caller's target-default workdir).
+  // Legacy/unmanaged: no valid SHED_RC_V (>= 2). Any stray SHED_RC_* values are
+  // not under a known schema version, so ignore them and apply legacy defaults
+  // (kind=claude-broker, fallback display name, caller's target-default workdir).
   if (!isManagedVersion(env.get(ENV.v)?.trim())) {
-    const kind: RcKind = 'agent';
+    const kind: RcKind = 'claude-broker';
     const { state, url } = classifyPane(kind, input.pane);
     return {
       slug,

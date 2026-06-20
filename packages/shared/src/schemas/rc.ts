@@ -10,10 +10,33 @@ export const rcStateSchema = z.enum([
 ]);
 export type RcState = z.infer<typeof rcStateSchema>;
 
-export const rcKindSchema = z.enum(['agent', 'repl', 'shell']);
+// RC Session Convention v2 kinds. `<tool>-<mode>` so the model can grow to other
+// agents (opencode-rc, codex-rc) later; `shell` is tool-agnostic. The rename from
+// v1's `agent|repl|shell` is a wire break — readers bump to v2 (see RC_SCHEMA_VERSION).
+//   claude-rc     – interactive `claude` REPL with `/rc` (was `repl`)
+//   claude-broker – the `claude remote-control` multiplexer/broker (was `agent`)
+//   shell         – plain login bash
+export const rcKindSchema = z.enum(['claude-broker', 'claude-rc', 'shell']);
 export type RcKind = z.infer<typeof rcKindSchema>;
 
-export const DEFAULT_RC_KIND: RcKind = 'repl';
+export const DEFAULT_RC_KIND: RcKind = 'claude-rc';
+
+/**
+ * RC Session Convention schema version, stamped into `SHED_RC_V` at create. Bumped
+ * to 2 for the kind rename (a value-grammar break). See
+ * docs/reference/rc-session-convention.md.
+ */
+export const RC_SCHEMA_VERSION = 2;
+
+/**
+ * Lowest `SHED_RC_V` a reader still understands. A managed session is one with
+ * `SHED_RC_V >= MIN_MANAGED_RC_VERSION`; below it (a v1 `agent`/`repl` session) is
+ * legacy/unmanaged. Deliberately **decoupled** from {@link RC_SCHEMA_VERSION} (what
+ * we write): a future *additive* bump raises the write version without raising this
+ * floor, so v2 sessions keep being read — honoring the convention's "higher version
+ * is still managed, never dropped" rule. Raise this only on a real grammar break.
+ */
+export const MIN_MANAGED_RC_VERSION = 2;
 
 export const rcTargetSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -38,7 +61,7 @@ export const rcSessionSchema = z.object({
   url: z.string().optional(),
   error: z.string().optional(),
   target: rcTargetSchema,
-  // RC Session Convention v1 metadata (read from the tmux session's SHED_RC_*
+  // RC Session Convention v2 metadata (read from the tmux session's SHED_RC_*
   // env). Optional on the wire so legacy/unmanaged sessions still parse.
   /** Stable session id (SHED_RC_ID). Absent on legacy/unmanaged sessions. */
   id: z.string().optional(),
@@ -80,8 +103,10 @@ export const createRcRequestSchema = z.object({
   workdir: z.string().optional(),
   kind: rcKindSchema.optional(),
   /**
-   * Optional kickoff prompt typed into a `repl` session once it's ready. Single
-   * line (the REPL submits on Enter): control chars (incl. newlines) are rejected.
+   * Optional kickoff line typed into the session once it's ready, then submitted
+   * with Enter. For `claude-rc` it's a prompt; for `shell` it's a command to run.
+   * Not used for `claude-broker` (no single live REPL). Single line — control chars
+   * (incl. newlines) are rejected.
    */
   initial_prompt: z
     .string()
@@ -99,3 +124,34 @@ export const rcSessionsResponseSchema = z.object({
   rc_sessions: z.array(rcSessionSchema),
 });
 export type RcSessionsResponse = z.infer<typeof rcSessionsResponseSchema>;
+
+/**
+ * The neutral, target-agnostic session shape emitted by the `shed-ext-rc` guest
+ * binary on stdout (RC Session Convention v2). The binary runs *inside* a shed, so
+ * it cannot know the orchestrator's host alias, shed name, or {@link RcTarget} —
+ * it reports only what it can observe (the tmux session + its `SHED_RC_*` env +
+ * pane-derived state). Each app adapts this into its own wire model:
+ * shed-remote-agent wraps it with a {@link RcTarget} (see `toRcSession`);
+ * shed-desktop injects host/shed and maps `id`→`rc_id`.
+ *
+ * This is the cross-tool interop contract — a golden fixture of it is asserted to
+ * decode here AND in shed-desktop's Swift `Codable`. Optional fields are *omitted*
+ * (not null) when unknown.
+ *
+ * Derived from {@link rcSessionSchema} (the app wire shape = this DTO + the caller's
+ * `target`) so the shared fields have a single source of truth: drop the
+ * caller-context fields the binary can't know (`target`, `error`), make
+ * `display_name`/`workdir` optional (omitted when the session stored none), and make
+ * `managed` required.
+ */
+export const rcSessionDtoSchema = rcSessionSchema.omit({ target: true, error: true }).extend({
+  managed: z.boolean(),
+  display_name: z.string().optional(),
+  workdir: z.string().optional(),
+});
+export type RcSessionDto = z.infer<typeof rcSessionDtoSchema>;
+
+export const rcSessionsDtoResponseSchema = z.object({
+  rc_sessions: z.array(rcSessionDtoSchema),
+});
+export type RcSessionsDtoResponse = z.infer<typeof rcSessionsDtoResponseSchema>;

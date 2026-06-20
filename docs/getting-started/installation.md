@@ -7,7 +7,7 @@
 | [Bun](https://bun.com) ≥ 1.0 | Runtime + workspace manager |
 | A running [`shed-server`](https://github.com/charliek/shed) (optional) | Needed for the shed flow; not required if you only use native machines |
 | `tmux` on every RC target | Backs every RC session, including `type: local` machines (so `tmux` must be on the orchestrator host) |
-| `claude` on every RC target (for `agent` / `repl` kinds) | The `shell` kind only needs bash |
+| `claude` on every RC target (for `claude-broker` / `claude-rc` kinds) | The `shell` kind only needs bash |
 | Claude subscription | `claude remote-control` requires `claude auth login` with a claude.ai account |
 | `gh` CLI (optional) | Powers the repo picker in the new-shed form |
 
