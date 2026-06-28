@@ -78,6 +78,12 @@ describe('machineRcCreate', () => {
     expect(calls[0].stdin).toBeUndefined();
   });
 
+  it('omits --workdir for a literal "~" (tmux cannot expand it)', async () => {
+    const { runner, calls } = fakeRun({ code: 0, stdout: DTO() });
+    await machineRcCreate({ ...baseCreate, workdir: '~' }, runner);
+    expect(calls[0].argv).not.toContain('--workdir');
+  });
+
   it('uses a per-machine rc_bin override as the binary (the SSH non-login PATH case)', async () => {
     const { runner, calls } = fakeRun({ code: 0, stdout: DTO() });
     await machineRcCreate({ ...baseCreate, rcBin: '/opt/homebrew/bin/shed-machine-rc' }, runner);
@@ -126,6 +132,15 @@ describe('machineRcCreate', () => {
       code: 'MACHINE_RC_MISSING',
       statusCode: 502,
     });
+  });
+
+  it('does not misclassify an SSH 255 "No such file" (e.g. missing identity) as a missing binary', async () => {
+    const { runner } = fakeRun({
+      code: 255,
+      stderr: 'Warning: Identity file /x/key not accessible: No such file or directory.',
+    });
+    const err = await machineRcCreate(baseCreate, runner).catch((e) => e);
+    expect(err.code).not.toBe('MACHINE_RC_MISSING');
   });
 
   it('maps an SSH auth failure (255) to 401', async () => {

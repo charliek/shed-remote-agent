@@ -257,9 +257,10 @@ binary — it stays a direct `ssh … tmux attach`.)
 
 On a **native machine** (not a shed), the identical engine ships as the
 [`shed-machine-rc`](https://github.com/charliek/shed-extensions) host CLI — same
-subcommands, same DTO, same exit codes — installed via brew/apt and invoked the same way
-(`ssh <user>@<machine> shed-machine-rc <subcommand> …`). shed-remote-agent uses it for
-`machine:` targets exactly as it uses `shed-ext-rc` for sheds.
+subcommands, same DTO, same exit codes — installed via brew/apt. An orchestrator runs it
+either over SSH (`ssh <user>@<machine> shed-machine-rc <subcommand> …`) for a remote
+machine, or directly on the orchestrator host for a `type: local` machine.
+shed-remote-agent uses it for `machine:` targets exactly as it uses `shed-ext-rc` for sheds.
 
 ### Subcommands
 

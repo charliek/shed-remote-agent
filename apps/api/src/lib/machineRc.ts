@@ -38,11 +38,14 @@ function rcError(result: { code: number; stdout: string; stderr: string }, bin: 
   // The binary couldn't be run: 127 = not found, 126 = found-but-not-executable.
   // On an SSH machine "not found" is most often a non-login PATH gap (or a bad
   // rc_bin), not a real absence — name the fix. Checked BEFORE classifySSHError so a
-  // 126 "Permission denied" isn't misread as an SSH auth failure (401).
+  // 126 "Permission denied" isn't misread as an SSH auth failure (401). The stderr
+  // fallback is gated to non-transport exits so an SSH-layer "No such file" (e.g. a
+  // missing identity file, which exits 255) isn't misread as a missing binary.
+  const sshTransport = result.code === 255 || result.code === 124;
   if (
     result.code === 126 ||
     result.code === 127 ||
-    /command not found|no such file/i.test(result.stderr)
+    (!sshTransport && /command not found|no such file/i.test(result.stderr))
   ) {
     return new AppError(
       'MACHINE_RC_MISSING',
@@ -140,7 +143,7 @@ export async function machineRcCreate(
   ];
   // Only pass --workdir for a real directory — never a literal "~" (tmux wouldn't
   // expand it); omitting it lets the binary resolve $SHED_WORKSPACE → $HOME.
-  if (opts.workdir) args.push('--workdir', opts.workdir);
+  if (opts.workdir && opts.workdir !== '~') args.push('--workdir', opts.workdir);
   if (opts.prompt) args.push('--prompt-stdin');
 
   // --wait blocks up to ~20s on the machine; give SSH headroom over that.
