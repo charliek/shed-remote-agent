@@ -1,32 +1,28 @@
 import { createRcRequestSchema, DEFAULT_RC_KIND, type Machine } from '@shed-remote-agent/shared';
 import { Hono } from 'hono';
 import { machineCommandTarget, requireMachine } from '../lib/machineClients.js';
-import { bootstrap, kill, listRcSessions, probeUntilReady, toRcSession } from '../lib/rc.js';
+import { machineRcCreate, machineRcKill, machineRcList } from '../lib/machineRc.js';
+import { genSlug } from '../lib/rc.js';
 import { parseJsonBody } from '../lib/requestBody.js';
 
 const machineRc = new Hono();
 
+// Wire fallback for a legacy/unmanaged session that carries no SHED_RC_WORKDIR.
+// Display-only — never passed to the binary as --workdir (that stays a real dir or
+// omitted, so the binary resolves $HOME).
 function defaultWorkdir(m: Machine): string {
   return m.workdir ?? '~';
-}
-
-function machineDisplayFallback(m: Machine): (slug: string) => string {
-  return (slug) => `${m.name}/${slug}`;
 }
 
 machineRc.get('/:machine/rc', async (c) => {
   const { machine } = c.req.param();
   const m = await requireMachine(machine);
-  const raw = await listRcSessions({
+  const sessions = await machineRcList({
     target: machineCommandTarget(m),
-    displayNameFallback: machineDisplayFallback(m),
+    machine: m.name,
+    rcBin: m.rc_bin,
+    defaultWorkdir: defaultWorkdir(m),
   });
-  const sessions = raw.map((r) =>
-    toRcSession(r, {
-      target: { kind: 'machine', machine_name: m.name },
-      defaultWorkdir: defaultWorkdir(m),
-    }),
-  );
   return c.json({ rc_sessions: sessions });
 });
 
@@ -36,45 +32,33 @@ machineRc.post('/:machine/rc', async (c) => {
   const body = createRcRequestSchema.parse(await parseJsonBody(c));
   const kind = body.kind ?? DEFAULT_RC_KIND;
 
-  const target = machineCommandTarget(m);
-  const targetLabel = `machine:${m.name}`;
-  const { slug, tmuxSession, displayName, workdir, id, createdBy, createdAt } = await bootstrap({
-    target,
-    slug: body.slug,
-    displayName: body.display_name,
-    displayNameFallback: machineDisplayFallback(m),
-    workdir: body.workdir ?? defaultWorkdir(m),
+  // The app generates the slug so it can build its `<machine>/<slug>` display
+  // convention; the binary accepts the caller-supplied slug. claude-broker has no
+  // pane to type into, so its prompt is dropped here (the binary would 400 it).
+  const slug = body.slug ?? genSlug();
+  const displayName = body.display_name ?? `${m.name}/${slug}`;
+  const prompt = kind === 'claude-broker' ? undefined : body.initial_prompt;
+
+  const session = await machineRcCreate({
+    target: machineCommandTarget(m),
+    machine: m.name,
+    rcBin: m.rc_bin,
     kind,
-    targetLabel,
-    interactiveShell: true,
+    slug,
+    displayName,
+    // A real directory or undefined — never the "~" wire fallback.
+    workdir: body.workdir ?? m.workdir,
+    targetLabel: `machine:${m.name}`,
+    prompt,
+    defaultWorkdir: defaultWorkdir(m),
   });
-
-  const state = await probeUntilReady({ target, slug, kind });
-
-  const session = toRcSession(
-    {
-      slug,
-      tmux_session: tmuxSession,
-      display_name: displayName,
-      workdir,
-      kind,
-      state: state.state,
-      url: state.url,
-      id,
-      created_by: createdBy,
-      created_at: createdAt,
-      target_label: targetLabel,
-      managed: true,
-    },
-    { target: { kind: 'machine', machine_name: m.name }, defaultWorkdir: workdir },
-  );
   return c.json(session, 201);
 });
 
 machineRc.delete('/:machine/rc/:slug', async (c) => {
   const { machine, slug } = c.req.param();
   const m = await requireMachine(machine);
-  await kill({ target: machineCommandTarget(m), slug });
+  await machineRcKill({ target: machineCommandTarget(m), slug, rcBin: m.rc_bin });
   return c.body(null, 204);
 });
 
