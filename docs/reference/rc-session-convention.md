@@ -87,7 +87,7 @@ following session. Writers MUST reject such values.
 | `SHED_RC_DISPLAY_NAME` | managed | Human-facing name; also passed as `--name` to `claude`. |
 | `SHED_RC_KIND` | managed | `claude-broker`, `claude-rc`, or `shell` (see [Kinds](#kinds)). |
 | `SHED_RC_WORKDIR` | managed | Working directory the session started in. |
-| `SHED_RC_CREATED_BY` | managed | Provenance as `<tool>/<version>` (e.g. `shed-remote-agent/0.1.0`, `shed-desktop/0.1.0`, `shed-ext-rc/0.5.0`). |
+| `SHED_RC_CREATED_BY` | managed | Provenance as `<tool>/<version>` (e.g. `shed-remote-agent/0.1.0`, `shed-desktop/0.1.0`, `shed-ext-rc/0.5.0`, `shed-machine-rc/0.4.0`). |
 | `SHED_RC_CREATED_AT` | managed | Creation time, RFC 3339 UTC with a trailing `Z` (the shape `Date.toISOString()` produces). |
 | `SHED_RC_TARGET` | optional | Advisory, **non-authoritative** target label for attribution (e.g. `shed:my-shed@host`, `machine:foo`). MUST NOT be trusted for routing — it can go stale. |
 | `SHED_RC_OWNER` | reserved | Authenticated principal. Not used yet. See below. |
@@ -254,6 +254,13 @@ invoke it over SSH (`ssh <shed>@<host> shed-ext-rc <subcommand> …`) and consum
 JSON. Because all tools share it, sessions created by any tool are byte-compatible and
 classify identically. (The interactive terminal **attach** is *not* routed through the
 binary — it stays a direct `ssh … tmux attach`.)
+
+On a **native machine** (not a shed), the identical engine ships as the
+[`shed-machine-rc`](https://github.com/charliek/shed-extensions) host CLI — same
+subcommands, same DTO, same exit codes — installed via brew/apt. An orchestrator runs it
+either over SSH (`ssh <user>@<machine> shed-machine-rc <subcommand> …`) for a remote
+machine, or directly on the orchestrator host for a `type: local` machine.
+shed-remote-agent uses it for `machine:` targets exactly as it uses `shed-ext-rc` for sheds.
 
 ### Subcommands
 

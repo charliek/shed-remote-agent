@@ -25,8 +25,10 @@ github:
 # sessions on. Same RC UX as sheds. Two flavors:
 #
 #   - type: ssh    (default) — connects over SSH (e.g. Tailscale SSH to a
-#                  tailnet host). Each machine needs `tmux` and (for
-#                  repl/agent kinds) `claude` installed.
+#                  tailnet host). Each machine needs `tmux`, `claude`, and the
+#                  `shed-machine-rc` host CLI installed
+#                  (`brew install charliek/tap/shed-machine-rc`, or
+#                  `apt install shed-machine-rc`).
 #   - type: local  — runs commands directly on the host this orchestrator
 #                  is running on, with no SSH hop. Useful when Tailscale
 #                  SSH can't loop back to the local node and you don't
@@ -39,6 +41,8 @@ github:
 #     user: charliek
 #     ssh_port: 22               # optional, default 22
 #     workdir: /home/charliek/projects   # default cwd for new RC sessions; default ~
+#     # rc_bin: /opt/homebrew/bin/shed-machine-rc  # only if shed-machine-rc isn't on
+#     #                                            # the machine's non-login SSH PATH
 #
 #   - name: mac-mini
 #     type: local
