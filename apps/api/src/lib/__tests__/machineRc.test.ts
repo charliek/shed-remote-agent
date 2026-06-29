@@ -156,6 +156,14 @@ describe('machineRcCreate', () => {
     await expect(machineRcCreate(baseCreate, runner)).rejects.toMatchObject({ statusCode: 502 });
   });
 
+  it('maps a command timeout (exit 124, ssh or local) to an RC timeout 502, not SSH_UNREACHABLE', async () => {
+    const { runner } = fakeRun({ code: 124, stderr: 'operation timed out after 30000ms' });
+    await expect(machineRcCreate(baseCreate, runner)).rejects.toMatchObject({
+      code: 'RC_FAILED',
+      statusCode: 502,
+    });
+  });
+
   it('treats a non-JSON / invalid-shape DTO as a 502 (binary fault, not client 400)', async () => {
     await expect(
       machineRcCreate(baseCreate, fakeRun({ code: 0, stdout: 'not json' }).runner),

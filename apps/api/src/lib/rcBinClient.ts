@@ -37,10 +37,10 @@ export interface RcBinClient extends RcBin {
 /**
  * Map a non-zero invocation to an AppError. Binary domain codes (2/3/4) FIRST, so a
  * domain message that happens to contain "command not found"/"no such file" isn't
- * misread as a missing binary. Then missing-binary: 127/126 always, plus — off the
- * SSH-transport exits (255/124) — a matching stderr, so an SSH-layer "No such file"
- * (e.g. a missing identity file, which exits 255) isn't misclassified. Then SSH
- * transport. Code 0 never reaches here.
+ * misread as a missing binary. Then the run() overall-timeout (124, ssh or local).
+ * Then missing-binary: 127/126 always, plus — off the SSH-transport exit (255) — a
+ * matching stderr, so an SSH-layer "No such file" (e.g. a missing identity file,
+ * which exits 255) isn't misclassified. Then SSH transport. Code 0 never reaches here.
  */
 function rcError(
   client: RcBin,
@@ -52,11 +52,16 @@ function rcError(
   if (result.code === 4) return new AppError('RC_NOT_FOUND', detail || 'rc session not found', 404);
   if (result.code === 2) return new AppError('RC_BAD_REQUEST', detail || 'invalid rc request', 400);
 
-  const sshTransport = result.code === 255 || result.code === 124;
+  // run() synthesizes 124 on its overall timeout for ssh OR local targets — a
+  // slow/hung RC binary, not necessarily an SSH-connection problem; surface it as an
+  // RC timeout rather than letting classifySSHError bucket it as SSH-unreachable.
+  if (result.code === 124) {
+    return new AppError('RC_FAILED', detail || `${client.bin} timed out`, 502);
+  }
   if (
     result.code === 126 ||
     result.code === 127 ||
-    (!sshTransport && /command not found|no such file/i.test(result.stderr))
+    (result.code !== 255 && /command not found|no such file/i.test(result.stderr))
   ) {
     return client.missing();
   }
@@ -68,7 +73,9 @@ function rcError(
   if (cls === 'host-unreachable' || cls === 'connection-refused' || cls === 'timeout') {
     return new AppError('SSH_UNREACHABLE', `SSH connection failed (${cls}): ${detail}`, 502);
   }
-  return new AppError('RC_FAILED', detail || `${client.bin} exited ${result.code}`, 500);
+  // Any other non-zero exit is an upstream binary/transport failure (like a missing
+  // binary or a DTO-contract failure) — 502, not a server-fault 500.
+  return new AppError('RC_FAILED', detail || `${client.bin} exited ${result.code}`, 502);
 }
 
 /** Decode the binary's stdout against a schema. A parse/shape failure is the binary's
