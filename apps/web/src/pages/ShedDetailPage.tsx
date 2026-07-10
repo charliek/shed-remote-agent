@@ -1,4 +1,4 @@
-import { DEFAULT_RC_KIND, type RcKind } from '@shed-remote-agent/shared';
+import { creatableRcKinds, DEFAULT_RC_KIND, type RcKind } from '@shed-remote-agent/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, Play, Plus, Square, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -11,7 +11,9 @@ import { Badge, Button, Card, EmptyState, PageShell, StatusPill } from '@/compon
 import { type APIError, api } from '@/lib/api';
 import { toastForRcCreate } from '@/lib/rcCreateToast';
 
-const SHED_ALLOWED_KINDS: RcKind[] = ['claude-rc', 'shell'];
+// claude-broker is excluded from this UI's picker regardless of capabilities (its
+// input is a remote URL driven from claude.ai, not this UI's pane/prompt flow).
+const PICKER_EXCLUDED: RcKind[] = ['claude-broker'];
 
 export default function ShedDetailPage() {
   const { host = '', name = '' } = useParams();
@@ -74,9 +76,14 @@ export default function ShedDetailPage() {
     },
     onError: (e: APIError) => toast.error(e.message),
   });
-  const [rcKind, setRcKind] = useState<RcKind>(
-    SHED_ALLOWED_KINDS.includes(DEFAULT_RC_KIND) ? DEFAULT_RC_KIND : SHED_ALLOWED_KINDS[0],
+  // Kinds offered for create, gated on the shed's advertised capabilities (carried
+  // in the rc list envelope): capabilities present → the kinds the binary reports
+  // whose backing agent is installed; absent (old image) → the pre-multi-agent set.
+  // The picker coerces the selected value if the gate later drops it.
+  const shedAllowedKinds = creatableRcKinds(rc.data?.capabilities).filter(
+    (k) => !PICKER_EXCLUDED.includes(k),
   );
+  const [rcKind, setRcKind] = useState<RcKind>(DEFAULT_RC_KIND);
   const [displayName, setDisplayName] = useState('');
   const [initialPrompt, setInitialPrompt] = useState('');
   const [showNewSession, setShowNewSession] = useState(false);
@@ -302,7 +309,7 @@ export default function ShedDetailPage() {
                     value={rcKind}
                     onChange={setRcKind}
                     disabled={newRcM.isPending}
-                    allowedKinds={SHED_ALLOWED_KINDS}
+                    allowedKinds={shedAllowedKinds}
                   />
                 </div>
                 {acceptsTypedInput && (

@@ -1,4 +1,9 @@
-import { DEFAULT_RC_KIND, type Machine, type RcKind } from '@shed-remote-agent/shared';
+import {
+  creatableRcKinds,
+  DEFAULT_RC_KIND,
+  type Machine,
+  type RcKind,
+} from '@shed-remote-agent/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -11,7 +16,9 @@ import { Badge, Button, Card, EmptyState, PageShell } from '@/components/ui';
 import { type APIError, api } from '@/lib/api';
 import { toastForRcCreate } from '@/lib/rcCreateToast';
 
-const ALLOWED_KINDS: RcKind[] = ['claude-rc', 'shell'];
+// claude-broker is excluded from this UI's picker regardless of capabilities (its
+// input is a remote URL driven from claude.ai, not this UI's pane/prompt flow).
+const PICKER_EXCLUDED: RcKind[] = ['claude-broker'];
 
 export default function MachineDetailPage() {
   const { machine = '' } = useParams();
@@ -33,9 +40,14 @@ export default function MachineDetailPage() {
     enabled: !!m,
   });
 
-  const [rcKind, setRcKind] = useState<RcKind>(
-    ALLOWED_KINDS.includes(DEFAULT_RC_KIND) ? DEFAULT_RC_KIND : ALLOWED_KINDS[0],
+  // Kinds offered for create, gated on the machine binary's advertised capabilities
+  // (carried in the rc list envelope): capabilities present → the kinds it reports
+  // whose backing agent is installed; absent (old binary) → the pre-multi-agent set.
+  // The picker coerces the selected value if the gate later drops it.
+  const allowedKinds = creatableRcKinds(rc.data?.capabilities).filter(
+    (k) => !PICKER_EXCLUDED.includes(k),
   );
+  const [rcKind, setRcKind] = useState<RcKind>(DEFAULT_RC_KIND);
   const [displayName, setDisplayName] = useState('');
   const [workdir, setWorkdir] = useState('');
   const [showNewSession, setShowNewSession] = useState(false);
@@ -228,7 +240,7 @@ export default function MachineDetailPage() {
                     value={rcKind}
                     onChange={setRcKind}
                     disabled={newRcM.isPending}
-                    allowedKinds={ALLOWED_KINDS}
+                    allowedKinds={allowedKinds}
                   />
                 </div>
 

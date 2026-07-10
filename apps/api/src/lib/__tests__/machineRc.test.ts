@@ -189,12 +189,14 @@ describe('machineRcList', () => {
       ],
     });
     const { runner, calls } = fakeRun({ code: 0, stdout });
-    const sessions = await machineRcList(
+    const { sessions, capabilities } = await machineRcList(
       { target: TARGET, machine: 'mymac', defaultWorkdir: '~' },
       runner,
     );
 
     expect(calls[0].argv).toEqual(['shed-machine-rc', 'list']);
+    // Bare envelope (old binary): no capabilities block, tolerated.
+    expect(capabilities).toBeUndefined();
     expect(sessions).toHaveLength(2);
     expect(sessions[0].display_name).toBe('mymac/abc234');
     // Unmanaged session: DTO omits display_name + workdir → app applies the fallbacks.

@@ -5,6 +5,7 @@ import {
   type RcBin,
   type RcBinClient,
   type RcCreateArgs,
+  type RcListResult,
   type Runner,
   rcCreate,
   rcKill,
@@ -82,11 +83,12 @@ export interface MachineListOptions {
   defaultWorkdir: string;
 }
 
-/** List a machine's RC sessions via `shed-machine-rc list`, adapting each DTO. */
+/** List a machine's RC sessions via `shed-machine-rc list`, adapting each DTO and
+ *  passing the embedded capabilities block through. */
 export async function machineRcList(
   opts: MachineListOptions,
   runner: Runner = run,
-): Promise<RcSession[]> {
+): Promise<RcListResult> {
   return rcList(machineClient(opts.machine, opts.defaultWorkdir, opts.rcBin), opts.target, runner);
 }
 
