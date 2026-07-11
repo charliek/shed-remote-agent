@@ -17,13 +17,15 @@ function defaultWorkdir(m: Machine): string {
 machineRc.get('/:machine/rc', async (c) => {
   const { machine } = c.req.param();
   const m = await requireMachine(machine);
-  const sessions = await machineRcList({
+  const { sessions, capabilities } = await machineRcList({
     target: machineCommandTarget(m),
     machine: m.name,
     rcBin: m.rc_bin,
     defaultWorkdir: defaultWorkdir(m),
   });
-  return c.json({ rc_sessions: sessions });
+  // capabilities is dropped from the JSON when undefined (old binary) — the same
+  // optional-block tolerance the DTO envelope has.
+  return c.json({ rc_sessions: sessions, capabilities });
 });
 
 machineRc.post('/:machine/rc', async (c) => {

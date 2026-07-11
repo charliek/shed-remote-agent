@@ -1,4 +1,4 @@
-import type { RcKind, RcSession, RcState, RcTarget } from '@shed-remote-agent/shared';
+import type { RcKindValue, RcSession, RcState, RcTarget } from '@shed-remote-agent/shared';
 import apiPkg from '../../package.json';
 
 // RC Session Convention v2 helpers shared by the shed and machine paths. Creating,
@@ -41,7 +41,9 @@ export interface RawRcSession {
   /** The workdir captured at bootstrap (SHED_RC_WORKDIR). Undefined for
    * legacy/unmanaged sessions; callers fall back to their target default. */
   workdir?: string;
-  kind: RcKind;
+  // Preserve-raw: an unknown kind from a newer binary is kept verbatim (never
+  // aliased) and rendered neutrally by consumers.
+  kind: RcKindValue;
   state: RcState;
   url?: string;
   /** Stable session id (SHED_RC_ID). Undefined for legacy/unmanaged sessions. */

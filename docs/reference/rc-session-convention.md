@@ -1,7 +1,8 @@
 # RC Session Convention
 
 A tool-neutral standard for **remote-control (RC) sessions** — the detached tmux
-sessions that run `claude remote-control` (or a REPL / shell) on a shed or machine.
+sessions that run a coding agent (`claude`, `codex`, `opencode`, `cursor-agent`) or a
+plain shell on a shed or machine.
 
 The goal is interoperability: `shed-remote-agent`, `shed-desktop`, the `shed` CLI,
 and any future client (e.g. a mobile app) can all create, discover, classify,
@@ -24,9 +25,16 @@ This page is **normative**. The keywords MUST, SHOULD, and MAY are used as in
   other, but it does **not** provide locking. Concurrent control by multiple tools
   is out of scope; the known hazards are documented below.
 - **Additive and versioned.** New keys can be added without a breaking change; a
-  single integer version (`SHED_RC_V`) guards the rare incompatible change. The
-  current version is **2** (the v1→v2 break renamed the kinds — see
-  [Versioning](#versioning-v1--v2)).
+  single integer version (`SHED_RC_V`) guards the rare incompatible change to the
+  on-session *metadata*. It is **2** and stays 2 — multi-agent support did not change
+  the session metadata shape. A **separate** capability/protocol version
+  (`rc_version`, currently **3**) travels with the binary's
+  [capabilities](#capabilities), decoupled on purpose: a client learns what a shed's
+  binary can do from `rc_version` + the feature list, not from the metadata schema
+  (see [Versioning](#versioning)).
+- **Discovery over sniffing.** A client learns a shed's kinds, installed agents, and
+  features from a [capabilities](#capabilities) block the binary emits — not by
+  triggering failures and parsing error strings.
 - **A shared guest binary owns lifecycle.** Rather than each tool reimplementing the
   SSH+tmux choreography, the canonical implementation is a small guest-side binary,
   [`shed-ext-rc`](#the-shed-ext-rc-guest-binary), baked into the shed image. Tools
@@ -85,7 +93,7 @@ following session. Writers MUST reject such values.
 | `SHED_RC_V` | managed | Schema version. A positive integer. `2` for this revision. A reader treats `SHED_RC_V < 2` (or missing) as legacy/unmanaged. |
 | `SHED_RC_ID` | managed | Opaque, stable session id (a UUIDv4). Generated once at create; never reused. The durable identity for correlating logs/events across tools. |
 | `SHED_RC_DISPLAY_NAME` | managed | Human-facing name; also passed as `--name` to `claude`. |
-| `SHED_RC_KIND` | managed | `claude-broker`, `claude-rc`, or `shell` (see [Kinds](#kinds)). |
+| `SHED_RC_KIND` | managed | The session kind — one of the values in [Kinds](#kinds) (e.g. `claude-rc`, `codex`, `shell`). An unrecognized value is preserved verbatim (see [Reading rules](#reading-rules)). |
 | `SHED_RC_WORKDIR` | managed | Working directory the session started in. |
 | `SHED_RC_CREATED_BY` | managed | Provenance as `<tool>/<version>` (e.g. `shed-remote-agent/0.1.0`, `shed-desktop/0.1.0`, `shed-ext-rc/0.5.0`, `shed-machine-rc/0.4.0`). |
 | `SHED_RC_CREATED_AT` | managed | Creation time, RFC 3339 UTC with a trailing `Z` (the shape `Date.toISOString()` produces). |
@@ -94,17 +102,74 @@ following session. Writers MUST reject such values.
 
 #### Kinds
 
-`SHED_RC_KIND` is a flat `<tool>-<mode>` value so the model can grow to other agents
-later (e.g. `opencode-rc`, `codex-rc`); brokers exist only where a tool has one.
+`SHED_RC_KIND` is a flat token naming the agent (and, where a tool has more than one
+mode, the mode: `claude-broker` vs `claude-rc`). The recognized set, in the pinned
+wire order the [capabilities](#capabilities) `kinds` list uses:
 
 | Kind | Inner command | Notes |
 |------|---------------|-------|
-| `claude-rc` | `claude --name <display> /rc` | Interactive `claude` REPL with `/rc`; the live conversation is what attachers see. The create-time default. |
-| `claude-broker` | `claude remote-control --name <display> --spawn same-dir` | The broker/multiplexer; hosts up to 32 cloud-driven sessions. |
+| `claude-broker` | `claude remote-control --name <display> [--permission-mode <m>] --spawn same-dir` | The broker/multiplexer; hosts up to 32 cloud-driven sessions. |
+| `claude-rc` | `claude --name <display> /rc` | Interactive `claude` REPL with `/rc`; the live conversation is what attachers see. The create-time default. With a [permission mode](#permission-modes) it uses `claude --remote-control --name <display> --permission-mode <m>` so the posture carries into the live session. |
+| `codex` | `codex` TUI | The OpenAI Codex terminal UI. |
+| `opencode` | `opencode` TUI | The opencode terminal UI. |
+| `cursor` | `cursor-agent` TUI | The Cursor Agent terminal UI. |
 | `shell` | `bash -l` | Plain login shell; tool-agnostic. |
+
+`claude-rc`, `codex`, `opencode`, and `cursor` accept a typed kickoff (a prompt/plan);
+`claude-broker`'s input is its remote URL; `shell` takes a command. Each kind's
+per-agent permission mapping, classifier, and trust/preseed behavior lives in one
+registry table in the reference implementation.
+
+An unrecognized `SHED_RC_KIND` — a session created by a *newer* client — is **not** an
+error and **not** aliased: the raw value is [preserved](#reading-rules) and the session
+is rendered neutrally. The set is open; new agents are added over time.
 
 The slug is **not** an identity: it can be caller-supplied, is reused across
 kill/recreate, and is only unique within a target. Use `SHED_RC_ID` to correlate.
+
+##### Permission modes
+
+A generic tri-state — `default` | `auto` | `skip` — is accepted by **every** kind and
+mapped per agent to that tool's real autonomy flags (the VM is already the sandbox).
+Omitting it passes no posture (each tool's own default). Advertised as the
+`generic-perm` [feature](#capabilities).
+
+| Generic mode | claude | codex | cursor | opencode |
+|------|--------|-------|--------|----------|
+| `default` | (none) | (none) | (none) | (none) |
+| `auto` | `--permission-mode auto` | `--full-auto` | (none) | `--auto` |
+| `skip` | `--permission-mode bypassPermissions` | `--dangerously-bypass-approvals-and-sandbox` | `--force` | `--auto` |
+
+The **claude** kinds additionally accept claude's full historical `--permission-mode`
+set — `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` — on top of the generic
+tri-state. Passing one of those claude-only modes with a non-claude kind is rejected
+(exit 2) with an error naming the generic set. With `skip` for a claude kind, a
+`--wait` creator also auto-accepts claude's one-time "Bypass Permissions mode" dialog
+so the session proceeds unattended.
+
+##### Kickoff: prompts and plans
+
+A kickoff line is delivered via **stdin**, never as an argument — so a line beginning
+with `-` is delivered literally, not parsed as a flag. A creator supplies at most one
+stdin payload:
+
+- A **prompt line** — for an agent kind it is a prompt; for `shell` it is a command.
+  `claude-broker` rejects it (its input is the remote URL).
+- A **plan document** (UTF-8, ≤ 1 MiB) — the binary writes it to a per-kind
+  HOME-rooted file (claude: `~/.claude/plans/plan-<slug>.md`; other agents:
+  `~/.shed-plans/plan-<slug>.md` — never the workdir, so a repo clone or a mounted
+  host dir is never dirtied) and composes a kickoff referencing the absolute path.
+  Advertised as the `plan-stdin` feature.
+- Optional caller **framing** (base64, only with a plan) — decoded and
+  control-char-validated in-guest, prepended to the composed plan kickoff, so a single
+  guest exec ships plan + framing without either colliding on stdin. Advertised as the
+  `prompt-b64` feature.
+
+The kickoff MAY be multi-line: a single line is typed with `send-keys -l`; a
+multi-line block is delivered as one input via a **bracketed paste** so embedded
+newlines don't submit early, then one `Enter` submits it. Newlines and tabs are
+allowed; other control characters (notably `ESC`) are rejected so a paste can't break
+out of the bracketed paste.
 
 `SHED_RC_CREATED_BY` is parsed by splitting on the **final** `/`; the tool token
 MUST NOT contain `/`.
@@ -130,16 +195,17 @@ auth/identity refactor is in progress on the `shed` side). When implemented:
 
 | `state` | Meaning |
 |---------|---------|
-| `starting` | No URL or status line yet. |
-| `ready` | Terminal-good for the kind (URL present for `claude-broker`/`claude-rc`; any output for `shell`). |
+| `starting` | No URL, composer, or status line yet. |
+| `ready` | Terminal-good for the kind (URL present for `claude-broker`/`claude-rc`; the agent's composer drawn for `codex`/`opencode`/`cursor`; any output for `shell`). |
 | `reconnecting` | `claude remote-control` is reconnecting (`claude-broker` only). |
-| `needs-trust` | `claude` refused — workspace not trusted. |
-| `needs-auth` | `claude` needs a `claude.ai` login. |
-| `dead` | The tmux session is gone. |
+| `needs-trust` | The agent refused — workspace/directory not trusted (`claude`, `codex`). |
+| `needs-auth` | The agent needs a login (`claude.ai`, `codex login`, `cursor-agent login`, …). See [`AuthHintFor`](#capabilities) for the per-agent remediation string. |
+| `dead` | The agent process exited back to the login shell, or the tmux session is gone. |
 
 See [Remote Control → States](remote-control.md#states) for the classifier regexes.
 For legacy/unmanaged sessions, state is **best-effort** (kind is assumed
-`claude-broker`).
+`claude-broker`). An **unknown** kind on a *managed* session classifies neutrally —
+as a plain shell pane, with no agent-specific ready/URL/auth affordances.
 
 ## Working directory (sheds)
 
@@ -182,18 +248,33 @@ claude 2.1.178; `shed-ext-rc create` does both):
 A tool that does neither leaves the session in `needs-trust` (still valid — the
 user accepts manually). `shell` sessions skip this (no Claude, no trust gate).
 
-## Initial prompt (claude-rc / shell)
+Other agents that gate on directory trust handle it their own way — `codex`, for
+example, shows a pre-selected "Yes, continue" directory-trust prompt that a `--wait`
+creator auto-accepts *from the pane* rather than pre-seeding a config file.
+`opencode`/`cursor` have no directory-trust gate.
 
-A creating tool MAY accept an optional **initial line** to kick off a session. Once
-the session is `ready`, type it and submit: `tmux send-keys -t <session> -l "<line>"`
-then `tmux send-keys -t <session> Enter`. For `claude-rc` it is a **prompt** into the
-live REPL; for `shell` it is a **command** to run. It MUST NOT be used for
-`claude-broker` (its input is the remote URL, not the pane). Constraints: send it
-**only** at `ready`; treat it as **best-effort** (the session is the deliverable, so
-a failed send must not fail creation); it is a single line (submitted on Enter) with
-no control characters. To avoid an argv injection where a line beginning with `-` is
-mis-parsed as a flag, the line SHOULD be passed to the binary via **stdin**, not as a
+## Initial prompt / plan (agent kinds + shell)
+
+A creating tool MAY accept an optional **kickoff** to start a session with work
+already queued. Once the session is `ready`, type it and submit (`tmux send-keys -l`
+for a single line; a `set-buffer` + bracketed `paste-buffer -p` for a multi-line
+block; then `Enter`). For an agent kind (`claude-rc`/`codex`/`opencode`/`cursor`) it
+is a **prompt**; for `shell` it is a **command**. It MUST NOT be used for
+`claude-broker` (its input is the remote URL, not the pane).
+
+Constraints: send it **only** at `ready`; treat it as **best-effort** (the session is
+the deliverable, so a failed send must not fail creation); newlines and tabs are
+allowed (a multi-line kickoff is delivered as one bracketed paste), but every other
+control character — notably `ESC` — MUST be rejected so a paste can't break out of the
+bracketed paste. To avoid an argv injection where a line beginning with `-` is
+mis-parsed as a flag, the kickoff MUST be passed to the binary via **stdin**, not as a
 command-line argument.
+
+A larger **plan document** MAY be shipped instead of a bare prompt: the binary writes
+it to a per-kind HOME-rooted file (never the workdir) and composes a kickoff that
+references the path, optionally led by base64 caller framing. These are the
+`plan-stdin` and `prompt-b64` [features](#capabilities); see the fuller treatment
+under [Kickoff: prompts and plans](#kickoff-prompts-and-plans).
 
 ## Reading rules
 
@@ -203,12 +284,21 @@ command-line argument.
    a removed var and MUST be ignored).
 3. A session is **managed** iff `SHED_RC_V` is a canonical positive integer **≥ 2**.
    A missing, malformed, or pre-v2 (`1`) version means **legacy/unmanaged**.
-4. Unknown `SHED_RC_*` keys MUST be ignored. An unrecognized `SHED_RC_KIND` value is
-   treated as legacy/unmanaged (no v1→v2 aliasing — see [Versioning](#versioning-v1--v2)).
-5. A reader that supports version *N* (≥ 2) and encounters `SHED_RC_V > N` MUST still
-   treat the session as managed: render the fields it understands, ignore the rest,
-   and **never drop the session**.
-6. Defaults for a legacy/unmanaged session:
+4. Unknown `SHED_RC_*` **keys** MUST be ignored.
+5. **Unknown-kind policy.** An unrecognized `SHED_RC_KIND` on a **managed** session
+   (valid `SHED_RC_V`) — e.g. a session created by a newer client that offers an agent
+   this reader doesn't know — MUST be **preserved verbatim**. The reader keeps the raw
+   kind string, keeps the session **managed**, and renders it **neutrally**: name +
+   state only, no kind-specific affordances and no synthetic `claude.ai` URL. It MUST
+   NOT be aliased to `claude-broker` and MUST NOT be dropped. Its pane classifies as a
+   plain shell pane; an unknown `state` maps to `starting`. (This differs from a
+   *legacy/unmanaged* session — one with no valid `SHED_RC_V` — which still defaults
+   `kind` to `claude-broker` per rule 7. There is no v1→v2 kind aliasing either way —
+   see [Versioning](#versioning).)
+6. A reader that supports capability version *N* and encounters `SHED_RC_V` or
+   `rc_version` greater than what it knows MUST still treat the session as managed:
+   render the fields it understands, ignore the rest, and **never drop the session**.
+7. Defaults for a legacy/unmanaged session:
     - `kind` → `claude-broker` (the renamed analog of the pre-convention default).
       Note this differs from the create-time default (`claude-rc`).
     - display name → a caller fallback such as `<target>/<slug>`.
@@ -228,10 +318,24 @@ command-line argument.
 - `SHED_RC_V` is bumped only for removals or semantic changes (such as the v1→v2 kind
   rename). Adding a key does **not** bump it.
 
-## Versioning (v1 → v2)
+## Versioning
 
-v2 renamed the `SHED_RC_KIND` values — a value-grammar change to an existing key, so
-it bumps `SHED_RC_V`:
+Two integer versions travel with a session, **decoupled on purpose**:
+
+| Version | Where | Meaning |
+|---------|-------|---------|
+| `SHED_RC_V` = **2** | the session's tmux env | The on-session **metadata** schema (the `SHED_RC_*` keys). Multi-agent support did **not** change the metadata shape, so this stays 2. Bumped only for a removal or a value-grammar change to an existing key. |
+| `rc_version` = **3** | the [capabilities](#capabilities) block | The **capability/protocol** version. Bumped when the capability shape or a feature contract changes. A client reads it (plus the `features` list) to learn what a shed's binary can do. |
+
+A client MUST NOT infer capabilities from `SHED_RC_V`, or metadata-schema support from
+`rc_version` — they move independently. The multi-agent rollout added kinds, permission
+modes, and plan delivery: all of that is signalled by `rc_version` 3 + feature tokens,
+while `SHED_RC_V` remained 2.
+
+### History: v1 → v2 (metadata)
+
+`SHED_RC_V` last moved from 1 to 2, which renamed the `SHED_RC_KIND` values — a
+value-grammar change to an existing key:
 
 | v1 (retired) | v2 |
 |--------------|-----|
@@ -239,12 +343,14 @@ it bumps `SHED_RC_V`:
 | `repl` | `claude-rc` |
 | `shell` | `shell` (unchanged) |
 
-There is **no aliasing**. A v2 reader does not translate old values: a session with
-`SHED_RC_V=1` (or an unrecognized kind) is rendered as legacy/unmanaged — still
-listable and killable, kind defaulting to `claude-broker` — never crashing and never
-dropped. Adopt v2 across your tools, then kill and recreate any v1 sessions whose
-metadata you want fully restored. (The shed image must ship `shed-ext-rc` before the
-dependent apps' v2 builds work — see below.)
+There is **no aliasing**. A reader does not translate old values: a session with
+`SHED_RC_V=1` is rendered as legacy/unmanaged — still listable and killable, kind
+defaulting to `claude-broker` — never crashing and never dropped. (Contrast a
+*forward*-unknown `SHED_RC_KIND` on a **managed** session, which is preserved verbatim
+and rendered neutrally — see the [unknown-kind policy](#reading-rules).) Adopt the
+current tools across your fleet, then kill and recreate any v1 sessions whose metadata
+you want fully restored. (The shed image must ship `shed-ext-rc` before the dependent
+apps' builds work — see below.)
 
 ## The `shed-ext-rc` guest binary
 
@@ -266,8 +372,9 @@ shed-remote-agent uses it for `machine:` targets exactly as it uses `shed-ext-rc
 
 | Command | Behaviour |
 |---------|-----------|
-| `create --kind <k> --name <display> [--slug <s>] [--workdir <d>] [--created-by <tool/ver>] [--target <label>] [--wait]` | Resolve the workdir (`$SHED_WORKSPACE` default), pre-seed claude trust for `claude-*` kinds, and `tmux new-session` with the `SHED_RC_*` env. Non-blocking by default. With `--wait`, poll to `ready`, accept trust, and deliver a prompt. A `--prompt`/`--text` line is read from **stdin**. Prints the resulting [DTO](#json-output-the-neutral-dto). |
-| `list` | Print `{ "rc_sessions": [DTO, …] }` for every `rc-*` session. |
+| `create --kind <k> --name <display> [--slug <s>] [--workdir <d>] [--created-by <tool/ver>] [--target <label>] [--wait] [--interactive-shell] [--prompt-stdin \| --plan-stdin [--prompt-b64 <b64>]] [--permission-mode <m> \| --skip]` | Resolve the workdir (`$SHED_WORKSPACE` default), pre-seed claude trust for `claude-*` kinds, and `tmux new-session` with the `SHED_RC_*` env. Non-blocking by default. With `--wait`, poll to `ready`, auto-accept trust (and the bypass-mode dialog for `--skip`), and deliver the kickoff. `--permission-mode`/`--skip` set the autonomy [posture](#permission-modes); the kickoff prompt/plan comes from **stdin** ([details](#kickoff-prompts-and-plans)). Prints the resulting [DTO](#json-output-the-neutral-dto). |
+| `list` | Print `{ "rc_sessions": [DTO, …], "capabilities": {…} }` — every `rc-*` session's DTO plus the embedded [capabilities](#capabilities) block (one exec feeds both). An old binary prints the bare `{ "rc_sessions": […] }` envelope (no `capabilities`), which still decodes. |
+| `capabilities` | Print the [capabilities](#capabilities) block standalone (kinds, per-agent install/version, features, per-kind hints). |
 | `probe --slug <s>` | Print one DTO (state + url). Read-only. |
 | `accept-trust --slug <s>` | Re-capture the pane; if the trust dialog is present, send `Enter`. |
 | `prompt --slug <s> [--session-id <id>]` | Deliver a stdin line to a `ready` session (foundation for scheduled prompts). `--session-id` guards against a killed-and-recreated `rc-<slug>`. |
@@ -294,7 +401,7 @@ its own wire model (adding the target/host/shed it already knows).
 {
   "slug": "abc234",
   "tmux_session": "rc-abc234",
-  "kind": "claude-rc",            // claude-rc | claude-broker | shell
+  "kind": "claude-rc",            // claude-broker|claude-rc|codex|opencode|cursor|shell (unknown preserved verbatim)
   "state": "ready",              // starting|ready|reconnecting|needs-trust|needs-auth|dead
   "managed": true,               // a valid SHED_RC_V (>= 2) was present
   "display_name": "my session",  // omitted if unstored (reader applies <target>/<slug>)
@@ -308,7 +415,47 @@ its own wire model (adding the target/host/shed it already knows).
 ```
 
 A golden fixture of this shape is committed to the consuming repos and asserted to
-decode in each (the single guard against contract drift).
+decode in each (the single guard against contract drift). This repo's copy lives at
+`packages/shared/src/schemas/rcSessionDto.golden.json` and is byte-identical to the
+reference implementation's `internal/ext/rc/testdata/rcSessionDto.golden.json`.
+
+## Capabilities
+
+The **capabilities** block is the discovery mechanism that replaces error-string
+sniffing: a client reads what a shed's binary can do rather than probing by triggering
+failures. The binary emits it standalone (the `capabilities` verb) and embedded in the
+`list` envelope (one exec feeds both the session list and discovery).
+
+```jsonc
+{
+  "rc_version": 3,                 // capability/protocol version — decoupled from SHED_RC_V (2)
+  "kinds": ["claude-broker", "claude-rc", "codex", "opencode", "cursor", "shell"],
+  "agents": {
+    "claude": { "installed": true, "version": "2.1.206" },
+    "codex":  { "installed": false }   // version omitted when not installed
+  },
+  "features": ["generic-perm", "plan-stdin", "prompt-b64"],
+  "kind_features": {
+    "codex": { "post_input": true, "approvals": "tui" }
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `rc_version` | Capability/protocol version (currently **3**). Bumped when the capability shape or a feature contract changes; **not** tied to `SHED_RC_V` (metadata schema, still 2). |
+| `kinds` | Every kind this binary offers, in the pinned wire order. |
+| `agents` | Per-tool install probe (`command -v` + `--version`, bounded time budget). Keyed by tool token; `version` omitted when not installed. Open map — an unknown agent from a newer binary decodes without loss. |
+| `features` | Stable feature tokens — `generic-perm` (the `default`/`auto`/`skip` [tri-state](#permission-modes)), `plan-stdin`, `prompt-b64`. A token is appended in the same change that ships its feature. |
+| `kind_features` | Per-kind UI hints. `post_input` = a typed line can be delivered to the pane; `approvals` = where approvals happen (v1 agents are TUI-only → `tui`). `claude-broker` and `shell` are omitted. |
+
+The `list` envelope embeds this as an **optional** `capabilities` field: an old binary
+emits the bare `{ "rc_sessions": […] }` output, which still decodes — the consumer
+tolerates the absence and simply has no capability data for that shed. **Absence of a
+feature token (or the whole block) is how a client detects an image that predates
+multi-agent RC**: new kinds and plan delivery require a recreated shed on a current
+image. A per-agent `needs-auth` remediation string is available from the reference
+implementation's `AuthHintFor` helper (e.g. `run \`codex\` and complete login`).
 
 ## Coordination & concurrency
 
@@ -362,12 +509,15 @@ A conformant tool:
 
 - [ ] Names sessions `rc-<slug>` with a valid slug.
 - [ ] Writes all required v2 keys atomically at create (`SHED_RC_V=2`), single-line
-      values only, with a `claude-rc`/`claude-broker`/`shell` kind.
+      values only, with a recognized [kind](#kinds).
 - [ ] Generates a fresh `SHED_RC_ID` per session; sets `SHED_RC_CREATED_BY` and
       `SHED_RC_CREATED_AT`.
 - [ ] Lists every `rc-*` session; reads `SHED_RC_*`; ignores unknown keys; never
       drops a higher-version session.
-- [ ] Treats missing/malformed/pre-v2 `SHED_RC_V` (and unrecognized kinds) as legacy
-      with the defaults above; performs no v1→v2 aliasing.
+- [ ] Treats missing/malformed/pre-v2 `SHED_RC_V` as legacy with the defaults above;
+      **preserves** an unrecognized `SHED_RC_KIND` on a managed session verbatim and
+      renders it neutrally; performs no v1→v2 aliasing.
+- [ ] Reads the [capabilities](#capabilities) block when present; tolerates its
+      absence (old binary) rather than failing.
 - [ ] Derives `state`/`url` from the pane; never stores them.
 - [ ] Never rewrites another tool's metadata; never puts secrets in `SHED_RC_*`.

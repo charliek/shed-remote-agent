@@ -5,6 +5,7 @@ import {
   type RcBin,
   type RcBinClient,
   type RcCreateArgs,
+  type RcListResult,
   type Runner,
   rcCreate,
   rcKill,
@@ -60,11 +61,12 @@ export async function shedRcCreate(
   return rcCreate(shedClient(opts.host, opts.shed), opts, runner);
 }
 
-/** List a shed's RC sessions via `shed-ext-rc list`, adapting each DTO. */
+/** List a shed's RC sessions via `shed-ext-rc list`, adapting each DTO and passing
+ *  the embedded capabilities block through. */
 export async function shedRcList(
   opts: { target: CommandTarget; host: string; shed: string },
   runner: Runner = run,
-): Promise<RcSession[]> {
+): Promise<RcListResult> {
   return rcList(shedClient(opts.host, opts.shed), opts.target, runner);
 }
 

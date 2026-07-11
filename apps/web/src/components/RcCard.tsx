@@ -1,4 +1,9 @@
-import type { RcKind, RcSession, RcState } from '@shed-remote-agent/shared';
+import {
+  authHintForKind,
+  type RcKind,
+  type RcSession,
+  type RcState,
+} from '@shed-remote-agent/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Copy, ExternalLink, Loader2, Terminal as TerminalIcon, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -11,8 +16,17 @@ import { Button, Card } from './ui';
 const kindInfo: Record<RcKind, { label: string; tone: string }> = {
   'claude-broker': { label: 'claude-broker', tone: 'bg-ochre-soft text-ochre' },
   'claude-rc': { label: 'claude-rc', tone: 'bg-primary-soft text-primary' },
+  codex: { label: 'codex', tone: 'bg-primary-soft text-primary' },
+  opencode: { label: 'opencode', tone: 'bg-primary-soft text-primary' },
+  cursor: { label: 'cursor', tone: 'bg-primary-soft text-primary' },
   shell: { label: 'shell', tone: 'bg-secondary text-muted-foreground' },
 };
+
+// Unknown-kind policy: a session created by a newer client carries a kind this build
+// doesn't know. Render it neutrally — the raw kind label, no kind-specific styling.
+function kindBadge(kind: string): { label: string; tone: string } {
+  return kindInfo[kind as RcKind] ?? { label: kind, tone: 'bg-secondary text-muted-foreground' };
+}
 
 const stateInfo: Record<RcState, { label: string; tone: string; hint?: string }> = {
   starting: { label: 'starting', tone: 'bg-ochre-soft text-ochre' },
@@ -27,9 +41,9 @@ const stateInfo: Record<RcState, { label: string; tone: string; hint?: string }>
     hint: 'Open a shell: `shed attach <name>`, cd to the workdir, run `claude` once to accept the trust prompt, then create a new remote-control session.',
   },
   'needs-auth': {
-    label: 'claude auth needed',
+    label: 'agent login needed',
     tone: 'bg-destructive/12 text-destructive',
-    hint: 'Open a shell: `shed attach <name>` and run `claude auth login` in the shed before creating a session.',
+    // hint is per-kind (authHintForKind) — composed in the component below.
   },
   dead: {
     label: 'dead',
@@ -41,7 +55,13 @@ const stateInfo: Record<RcState, { label: string; tone: string; hint?: string }>
 export function RcCard({ s }: { s: RcSession }) {
   const qc = useQueryClient();
   const info = stateInfo[s.state];
-  const kind = kindInfo[s.kind];
+  const kind = kindBadge(s.kind);
+  // needs-auth remediation is per-kind (each agent logs in differently); the other
+  // states keep their static hints.
+  const hint =
+    s.state === 'needs-auth'
+      ? `Open a terminal on the ${s.target.kind === 'machine' ? 'machine' : 'shed'} and ${authHintForKind(s.kind)}, then create a new session.`
+      : info.hint;
 
   const killM = useMutation({
     mutationFn: () => {
@@ -115,7 +135,7 @@ export function RcCard({ s }: { s: RcSession }) {
             </a>
           )}
 
-          {info.hint && <div className="mt-2 text-muted-foreground text-xs">{info.hint}</div>}
+          {hint && <div className="mt-2 text-muted-foreground text-xs">{hint}</div>}
 
           {s.error && <div className="mt-2 text-destructive text-xs">{s.error}</div>}
         </div>

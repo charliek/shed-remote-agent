@@ -13,6 +13,21 @@ const OPTIONS: { value: RcKind; label: string; hint: string }[] = [
     hint: 'live claude REPL with /rc',
   },
   {
+    value: 'codex',
+    label: 'codex',
+    hint: 'the codex TUI',
+  },
+  {
+    value: 'opencode',
+    label: 'opencode',
+    hint: 'the opencode TUI',
+  },
+  {
+    value: 'cursor',
+    label: 'cursor',
+    hint: 'the cursor-agent TUI',
+  },
+  {
     value: 'shell',
     label: 'shell',
     hint: 'plain bash in the shed workspace',
@@ -44,7 +59,7 @@ export function RcKindPicker({
   const current = visible.find((o) => o.value === value);
   return (
     <div className="space-y-1.5">
-      <div className="flex gap-1 rounded-xl border border-border bg-secondary p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-secondary p-1">
         {visible.map((opt) => (
           <button
             key={opt.value}

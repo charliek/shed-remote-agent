@@ -1,4 +1,5 @@
 import {
+  type RcCapabilities,
   type RcKind,
   type RcSession,
   type RcSessionDto,
@@ -145,16 +146,24 @@ export async function rcCreate(
   return client.adapt(decode(client, rcSessionDtoSchema, result.stdout));
 }
 
-/** List a target's RC sessions via `<bin> list`, adapting each DTO. */
+/** An `rcList` result: the adapted sessions plus the capabilities block the binary
+ *  embedded in the `list` envelope (undefined for an old binary's bare envelope). */
+export interface RcListResult {
+  sessions: RcSession[];
+  capabilities?: RcCapabilities;
+}
+
+/** List a target's RC sessions via `<bin> list`, adapting each DTO and passing the
+ *  embedded capabilities block through (one exec feeds both). */
 export async function rcList(
   client: RcBinClient,
   target: CommandTarget,
   runner: Runner = run,
-): Promise<RcSession[]> {
+): Promise<RcListResult> {
   const result = await runner(target, [client.bin, 'list'], { timeoutMs: 15_000 });
   if (result.code !== 0) throw rcError(client, result);
-  const { rc_sessions } = decode(client, rcSessionsDtoResponseSchema, result.stdout);
-  return rc_sessions.map(client.adapt);
+  const { rc_sessions, capabilities } = decode(client, rcSessionsDtoResponseSchema, result.stdout);
+  return { sessions: rc_sessions.map(client.adapt), capabilities };
 }
 
 /** Kill a session via `<bin> kill` (idempotent — the binary exits 0 for an

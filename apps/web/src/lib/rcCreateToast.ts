@@ -1,4 +1,4 @@
-import type { RcSession } from '@shed-remote-agent/shared';
+import { agentBinForKind, authHintForKind, type RcSession } from '@shed-remote-agent/shared';
 import { toast } from 'sonner';
 
 /**
@@ -15,21 +15,29 @@ export function toastForRcCreate(s: RcSession): void {
     case 'reconnecting':
       toast.success(`Session ${s.slug} created`);
       return;
-    case 'dead':
+    case 'dead': {
+      // Per-kind binary: each kind runs a different agent executable.
+      const bin = agentBinForKind(s.kind);
       toast.error(
-        `Session ${s.slug} exited immediately. Is \`claude\` on the machine's PATH? (For nvm-installed claude, ensure ~/.bashrc adds it; we run with bash -ic for machines.)`,
+        bin
+          ? `Session ${s.slug} exited immediately. Is \`${bin}\` on the machine's PATH? (For nvm-installed tools, ensure ~/.bashrc adds them; we run with bash -ic for machines.)`
+          : `Session ${s.slug} exited immediately — the inner command exited.`,
         { duration: 8000 },
       );
       return;
-    case 'needs-trust':
+    }
+    case 'needs-trust': {
+      const bin = agentBinForKind(s.kind);
       toast.warning(
-        `Session ${s.slug} created — workspace trust required. Open a shell, run \`claude\` in the workdir, accept the prompt, then create a new session.`,
+        `Session ${s.slug} created — workspace trust required. Open a shell, run \`${bin ?? 'the agent'}\` in the workdir, accept the prompt, then create a new session.`,
         { duration: 8000 },
       );
       return;
+    }
     case 'needs-auth':
+      // Per-kind login remediation (each agent logs in differently).
       toast.warning(
-        `Session ${s.slug} created — claude auth required. Run \`claude auth login\` on the machine first.`,
+        `Session ${s.slug} created — agent login required. In a terminal on the target, ${authHintForKind(s.kind)} first.`,
         { duration: 8000 },
       );
       return;

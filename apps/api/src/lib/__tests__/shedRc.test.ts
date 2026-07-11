@@ -157,7 +157,10 @@ describe('shedRcList', () => {
       ],
     });
     const { runner, calls } = fakeRun({ code: 0, stdout });
-    const sessions = await shedRcList({ target: TARGET, host: 'h', shed: 'demo' }, runner);
+    const { sessions, capabilities } = await shedRcList(
+      { target: TARGET, host: 'h', shed: 'demo' },
+      runner,
+    );
 
     expect(calls[0].argv).toEqual(['shed-ext-rc', 'list']);
     expect(sessions).toHaveLength(2);
@@ -165,6 +168,26 @@ describe('shedRcList', () => {
     // Unmanaged session: DTO omits display_name → app applies <shed>/<slug>.
     expect(sessions[1].display_name).toBe('demo/leg');
     expect(sessions[1].target).toEqual({ kind: 'shed', shed_name: 'demo', host: 'h' });
+    // Bare envelope (old binary): no capabilities block, tolerated.
+    expect(capabilities).toBeUndefined();
+  });
+
+  it('passes the embedded capabilities block through', async () => {
+    const caps = {
+      rc_version: 3,
+      kinds: ['claude-broker', 'claude-rc', 'codex', 'opencode', 'cursor', 'shell'],
+      agents: { claude: { installed: true, version: '2.1.206' }, codex: { installed: false } },
+      features: ['generic-perm', 'plan-stdin', 'prompt-b64'],
+      kind_features: { codex: { post_input: true, approvals: 'tui' } },
+    };
+    const stdout = JSON.stringify({ rc_sessions: [], capabilities: caps });
+    const { runner } = fakeRun({ code: 0, stdout });
+    const { sessions, capabilities } = await shedRcList(
+      { target: TARGET, host: 'h', shed: 'demo' },
+      runner,
+    );
+    expect(sessions).toEqual([]);
+    expect(capabilities).toEqual(caps);
   });
 });
 

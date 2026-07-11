@@ -15,8 +15,14 @@ function shedCommandTarget(host: Host, shed: string): CommandTarget {
 rc.get('/:host/:name/rc', async (c) => {
   const { host, name } = c.req.param();
   const { host: h } = await clientForName(host);
-  const sessions = await shedRcList({ target: shedCommandTarget(h, name), host, shed: name });
-  return c.json({ rc_sessions: sessions });
+  const { sessions, capabilities } = await shedRcList({
+    target: shedCommandTarget(h, name),
+    host,
+    shed: name,
+  });
+  // capabilities is dropped from the JSON when undefined (old binary) — the same
+  // optional-block tolerance the DTO envelope has.
+  return c.json({ rc_sessions: sessions, capabilities });
 });
 
 rc.post('/:host/:name/rc', async (c) => {
