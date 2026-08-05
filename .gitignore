@@ -35,3 +35,6 @@ coverage/
 site-build/
 .venv/
 __pycache__/
+
+# local agent worktrees (embedded git repos)
+.claude/worktrees/

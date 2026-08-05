@@ -17,8 +17,8 @@ apps/
 packages/
   shared/        Zod schemas + inferred types
 config.example.yaml
-pyproject.toml   Docs tooling (mkdocs + uv dep group)
-mkdocs.yml
+pyproject.toml   Docs tooling (zensical + uv dep group)
+zensical.toml
 ```
 
 ## Scripts
@@ -55,11 +55,13 @@ No hooks are installed by default. If you want them, add `bun x lint-staged` to 
 
 ## Docs tooling
 
-The docs use `mkdocs-material`, installed into a `uv`-managed virtualenv:
+The docs use [Zensical](https://zensical.org) with the shared
+[stridelabs-docs-theme](https://github.com/charliek/stridelabs-docs-theme)
+package, installed into a `uv`-managed virtualenv:
 
 ```bash
 make docs         # build into site-build/
 make docs-serve   # serve on http://127.0.0.1:7070
 ```
 
-Docs deploy to GitHub Pages on every push to `main` that touches `docs/**`, `mkdocs.yml`, `pyproject.toml`, or `.github/workflows/docs.yml` — see `.github/workflows/docs.yml`.
+Docs deploy to GitHub Pages on every push to `main` that touches `docs/**`, `zensical.toml`, `pyproject.toml`, `uv.lock`, or `.github/workflows/docs.yml` — see `.github/workflows/docs.yml`. `.github/workflows/docs-pr.yml` runs the same strict build on pull requests.

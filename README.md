@@ -121,7 +121,9 @@ brew services start shed-host-agent
 
 ### Documentation development
 
-The docs use `mkdocs-material` managed by `uv`:
+The docs use [Zensical](https://zensical.org) with the shared
+[stridelabs-docs-theme](https://github.com/charliek/stridelabs-docs-theme)
+package, managed by `uv`:
 
 ```bash
 make docs            # build into site-build/
