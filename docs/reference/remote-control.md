@@ -19,7 +19,7 @@ Local machines exist for the case where the orchestrator runs on a node that oth
 ## Session kinds
 
 The `kind` field on bootstrap selects what runs inside tmux. Default is `claude-rc`.
-(v2 renamed the kinds; see [RC Session Convention → Versioning](rc-session-convention.md#versioning-v1--v2).)
+(v2 renamed the kinds; see [RC Session Convention → History: v1 → v2](rc-session-convention.md#history-v1-v2-metadata).)
 
 | Kind | Inner command | Notes |
 |------|---------------|-------|
