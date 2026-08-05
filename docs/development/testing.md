@@ -67,4 +67,4 @@ For the UI, start `bun run dev` and click through:
 | `lint` | `bunx biome ci .`, then `bunx tsc --noEmit` in `apps/api`, `apps/web`, and `packages/shared` |
 | `test` | `bun test` across the workspace (today only `apps/api` has tests) |
 
-`.github/workflows/docs.yml` builds and deploys the mkdocs site to GitHub Pages whenever `docs/**`, `mkdocs.yml`, `pyproject.toml`, or the docs workflow itself changes.
+`.github/workflows/docs.yml` builds and deploys the docs site to GitHub Pages whenever `docs/**`, `zensical.toml`, `pyproject.toml`, `uv.lock`, or the docs workflow itself changes; `.github/workflows/docs-pr.yml` runs the same strict build on pull requests.

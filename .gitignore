@@ -31,7 +31,10 @@ coverage/
 
 .claude/settings.local.json
 
-# Docs (mkdocs + uv)
+# Docs (Zensical + uv)
 site-build/
 .venv/
 __pycache__/
+
+# local agent worktrees (embedded git repos)
+.claude/worktrees/
